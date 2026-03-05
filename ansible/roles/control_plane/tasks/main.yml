@@ -1,0 +1,40 @@
+---
+- name: Check if kubeadm has already been initialized
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: kubeadm_init_check
+
+- name: Initialize Kubernetes control plane
+  ansible.builtin.command: >
+    kubeadm init
+    --apiserver-advertise-address={{ private_ip }}
+    --pod-network-cidr=192.168.0.0/16
+    --node-name={{ inventory_hostname }}
+    --apiserver-cert-extra-sans={{ public_ip }}
+  when: not kubeadm_init_check.stat.exists
+
+- name: Create .kube directory for ubuntu user
+  ansible.builtin.file:
+    path: /home/ubuntu/.kube
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: "0755"
+
+- name: Copy admin.conf to ubuntu user kubeconfig
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/ubuntu/.kube/config
+    remote_src: true
+    owner: ubuntu
+    group: ubuntu
+    mode: "0600"
+
+- name: Generate join command
+  ansible.builtin.command: kubeadm token create --print-join-command
+  register: join_command_result
+  changed_when: false
+
+- name: Store join command as fact
+  ansible.builtin.set_fact:
+    kubeadm_join_command: "{{ join_command_result.stdout }}"

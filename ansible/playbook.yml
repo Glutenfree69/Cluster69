@@ -1,0 +1,91 @@
+---
+# --- Common setup on all nodes ---
+- name: Common setup (OS, containerd, kubeadm)
+  hosts: k8s_cluster
+  become: true
+  roles:
+    - common
+
+# --- Initialize control plane ---
+- name: Initialize Kubernetes control plane
+  hosts: control_plane
+  become: true
+  roles:
+    - control_plane
+
+# --- Join workers ---
+- name: Join worker nodes to cluster
+  hosts: workers
+  become: true
+  roles:
+    - worker
+
+# --- Install Calico CNI + label nodes + fetch kubeconfig ---
+- name: Install Calico CNI and finalize cluster
+  hosts: control_plane
+  become: true
+  roles:
+    - calico
+  tasks:
+    - name: Label kube-2 as worker
+      become: false
+      ansible.builtin.command: >
+        kubectl label node kube-2 node-role.kubernetes.io/worker="" --overwrite
+      changed_when: false
+
+    - name: Label ingress node
+      become: false
+      ansible.builtin.command: >
+        kubectl label node ingress node-role.kubernetes.io/ingress="" --overwrite
+      changed_when: false
+
+    - name: Label monitoring node
+      become: false
+      ansible.builtin.command: >
+        kubectl label node monitoring node-role.kubernetes.io/monitoring="" --overwrite
+      changed_when: false
+
+    - name: Read admin.conf from control plane
+      ansible.builtin.slurp:
+        src: /etc/kubernetes/admin.conf
+      register: admin_conf_raw
+
+    - name: Parse admin.conf
+      ansible.builtin.set_fact:
+        admin_conf: "{{ admin_conf_raw.content | b64decode | from_yaml }}"
+
+    - name: Generate kubeconfig with kubequest context
+      become: false
+      delegate_to: localhost
+      ansible.builtin.template:
+        src: templates/kubeconfig.yml.j2
+        dest: /tmp/kubeconfig-kubequest
+        mode: "0600"
+
+    - name: Push kubeconfig to SSM Parameter Store
+      become: false
+      delegate_to: localhost
+      ansible.builtin.shell: >
+        aws ssm put-parameter
+        --name "/kubequest/kubeconfig"
+        --type SecureString
+        --value "$(cat /tmp/kubeconfig-kubequest)"
+        --overwrite
+        --tier Advanced
+        --region {{ lookup('env', 'AWS_REGION') | default('eu-west-3', true) }}
+      changed_when: false
+
+    - name: Clean up temp kubeconfig
+      become: false
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: /tmp/kubeconfig-kubequest
+        state: absent
+
+    - name: Display access instructions
+      become: false
+      delegate_to: localhost
+      ansible.builtin.debug:
+        msg: |
+          Cluster ready! Kubeconfig pushed to SSM.
+          Run: make kubeconfig

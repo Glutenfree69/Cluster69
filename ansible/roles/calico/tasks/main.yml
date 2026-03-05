@@ -1,0 +1,47 @@
+---
+- name: Apply Tigera operator manifest
+  become: false
+  ansible.builtin.command: >
+    kubectl apply --server-side -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.2/manifests/tigera-operator.yaml
+  register: tigera_result
+  changed_when: "'created' in tigera_result.stdout"
+
+- name: Create Calico custom resource file
+  ansible.builtin.copy:
+    dest: /tmp/calico-custom-resource.yaml
+    content: |
+      apiVersion: operator.tigera.io/v1
+      kind: Installation
+      metadata:
+        name: default
+      spec:
+        calicoNetwork:
+          ipPools:
+          - name: default-ipv4-ippool
+            blockSize: 26
+            cidr: 192.168.0.0/16
+            encapsulation: VXLANCrossSubnet
+            natOutgoing: Enabled
+            nodeSelector: all()
+      ---
+      apiVersion: operator.tigera.io/v1
+      kind: APIServer
+      metadata:
+        name: default
+      spec: {}
+
+- name: Apply Calico custom resource
+  become: false
+  ansible.builtin.command: kubectl apply -f /tmp/calico-custom-resource.yaml
+  register: calico_cr_result
+  changed_when: "'created' in calico_cr_result.stdout"
+
+- name: Wait for all nodes to be Ready
+  become: false
+  ansible.builtin.command: >
+    kubectl wait --for=condition=Ready nodes --all --timeout=120s
+  changed_when: false
+  retries: 3
+  delay: 10
+  register: nodes_ready
+  until: nodes_ready.rc == 0
