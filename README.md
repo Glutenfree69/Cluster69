@@ -1,6 +1,6 @@
 # KubeQuest
 
-Cluster Kubernetes self-managed (kubeadm) sur AWS, provisionne from scratch avec Terraform + Ansible. Heberge une app Laravel PHP conteneurisee.
+Cluster Kubernetes self-managed (kubeadm) sur AWS, provisionne from scratch avec Terraform + Ansible.
 
 ## Quick Start
 
@@ -112,8 +112,6 @@ KubeQuest/
       control_plane/        # kubeadm init sur kube-1
       worker/               # kubeadm join sur les workers
       calico/               # Installation CNI Calico + labels + kubeconfig SSM
-  php_dogshit/
-    Dockerfile              # Image PHP 8.2 + Apache + Laravel (c'est un Dockerfile, on passe)
 ```
 
 ---
@@ -440,12 +438,6 @@ Processus interne du join :
    - Conserve les certificats (CA cert, client cert, client key)
 3. Push vers SSM Parameter Store (SecureString, chiffre KMS).
 4. Supprime le fichier temporaire `/tmp/kubeconfig-kubequest`.
-
----
-
-## Application PHP
-
-Un Dockerfile (`php_dogshit/Dockerfile`) : image PHP 8.2 + Apache + Laravel. Build, push, deploy en tant que pod Kubernetes. C'est tout ce qu'il y a a savoir.
 
 ---
 

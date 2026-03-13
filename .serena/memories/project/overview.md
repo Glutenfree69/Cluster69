@@ -1,10 +1,9 @@
 # KubeQuest - Project Overview
 
 ## Purpose
-Cluster Kubernetes self-managed (kubeadm) sur AWS pour héberger une app Laravel PHP (dans `php_dogshit/`) avec MySQL et Traefik. Workflow GitOps complet avec Helm + ArgoCD.
+Cluster Kubernetes self-managed (kubeadm) sur AWS avec Traefik. Workflow GitOps complet avec Helm + ArgoCD. L'app déployée sera podinfo (webapp Go).
 
 ## Project Structure
-- `php_dogshit/` — Application Laravel PHP (compteur API)
 - `terraform/` — Infrastructure AWS (IaC)
 - `ansible/` — Provisioning cluster kubeadm (à créer)
 - `helm/` — Charts Helm applicatifs (à créer)
