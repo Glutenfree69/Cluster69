@@ -34,11 +34,6 @@ variable "ssh_public_key_path" {
   default     = "~/.ssh/id_ed25519.pub"
 }
 
-variable "my_ip_cidr" {
-  description = "Your public IP in CIDR notation (e.g. 203.0.113.42/32) for SSH access"
-  type        = string
-}
-
 variable "control_plane_instance_type" {
   description = "Instance type for the control plane node"
   type        = string
