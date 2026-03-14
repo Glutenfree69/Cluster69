@@ -9,6 +9,7 @@
 - name: Create Calico custom resource file
   ansible.builtin.copy:
     dest: /tmp/calico-custom-resource.yaml
+    mode: "0644"
     content: |
       apiVersion: operator.tigera.io/v1
       kind: Installation
@@ -20,7 +21,7 @@
           - name: default-ipv4-ippool
             blockSize: 26
             cidr: 192.168.0.0/16
-            encapsulation: VXLANCrossSubnet
+            encapsulation: VXLAN
             natOutgoing: Enabled
             nodeSelector: all()
       ---

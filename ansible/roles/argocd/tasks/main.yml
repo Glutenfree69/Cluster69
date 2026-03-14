@@ -54,9 +54,12 @@
 - name: Get ArgoCD initial admin password
   become: false
   ansible.builtin.shell: >
+    set -o pipefail &&
     kubectl get secret argocd-initial-admin-secret
     -n argocd
     -o jsonpath='{.data.password}' | base64 -d
+  args:
+    executable: /bin/bash
   register: argocd_password
   changed_when: false
 

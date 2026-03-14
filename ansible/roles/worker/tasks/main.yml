@@ -9,3 +9,4 @@
     {{ hostvars[groups['control_plane'][0]].kubeadm_join_command }}
     --node-name={{ inventory_hostname }}
   when: not kubelet_conf_check.stat.exists
+  changed_when: true

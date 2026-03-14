@@ -441,7 +441,7 @@ Processus interne du join :
 2. Cree la custom resource `Installation` :
    - **`blockSize: 26`** : chaque node recoit un `/26` (64 IPs pour les pods). Suffisant pour un petit cluster.
    - **`cidr: 192.168.0.0/16`** : doit matcher le `--pod-network-cidr` du kubeadm init.
-   - **`encapsulation: VXLANCrossSubnet`** : encapsule le trafic pod-to-pod en VXLAN uniquement quand les pods sont sur des subnets differents. Si les pods sont sur le meme node, trafic direct sans encapsulation (plus performant).
+   - **`encapsulation: VXLAN`** : encapsule **tout** le trafic pod-to-pod en VXLAN, meme entre nodes du meme subnet. Obligatoire sur AWS car les instances EC2 droppent les paquets dont l'IP source ne correspond pas a l'instance (source/dest check). Sans encapsulation, le trafic pod (`192.168.x.x`) est envoye en direct sur `ens5` et AWS le rejette. Voir [doc Calico VXLAN/IPIP](https://docs.tigera.io/calico/latest/networking/configuring/vxlan-ipip).
    - **`natOutgoing: Enabled`** : les pods peuvent acceder a Internet (le trafic sortant est NATe avec l'IP du node).
 3. `kubectl wait --for=condition=Ready` : attend que tous les nodes soient Ready (Calico doit d'abord etre operationnel).
 
