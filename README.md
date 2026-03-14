@@ -574,10 +574,225 @@ Deploye en **DaemonSet** sur le node `ingress` via `hostNetwork: true` (ports 80
 
 ---
 
+## Reseau en detail
+
+Le cluster a **3 plans reseau** superposes. Comprendre leur interaction est essentiel pour debugger.
+
+### Les 3 plans reseau
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Plan 3 — Services (virtuel)                                    │
+│  CIDR: 10.96.0.0/12                                            │
+│  Gere par: kube-proxy (regles iptables/IPVS)                   │
+│  Ex: ClusterIP 10.96.0.10 (kube-dns)                           │
+│  Les Services n'existent pas "physiquement" — ce sont des       │
+│  regles iptables qui redirigent vers les IPs des pods           │
+├─────────────────────────────────────────────────────────────────┤
+│  Plan 2 — Pods (overlay VXLAN)                                  │
+│  CIDR: 192.168.0.0/16 (chaque node recoit un /26)              │
+│  Gere par: Calico (interface vxlan.calico)                      │
+│  Ex: pod coredns 192.168.79.131 sur kube-2                     │
+│  Trafic encapsule en UDP:4789 entre les nodes                   │
+├─────────────────────────────────────────────────────────────────┤
+│  Plan 1 — Nodes (physique AWS)                                  │
+│  CIDR: 10.10.1.0/24 (subnet VPC)                               │
+│  Gere par: AWS VPC + Security Groups                            │
+│  Ex: kube-1 = 10.10.1.100, kube-2 = 10.10.1.194               │
+│  Interface: ens5 (ENI AWS)                                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Parcours d'un paquet pod-to-pod (cross-node)
+
+Exemple : un pod sur kube-1 (`192.168.235.1`) appelle CoreDNS sur kube-2 (`192.168.79.131`).
+
+```
+Pod (192.168.235.1) sur kube-1
+    │
+    │ 1. Le pod envoie un paquet DNS vers 10.96.0.10 (ClusterIP kube-dns)
+    │
+    ▼
+kube-proxy (iptables sur kube-1)
+    │
+    │ 2. iptables DNAT : remplace 10.96.0.10 → 192.168.79.131 (IP reelle du pod CoreDNS)
+    │
+    ▼
+Calico (routing table sur kube-1)
+    │
+    │ 3. ip route : 192.168.79.128/26 → via vxlan.calico
+    │    Calico encapsule le paquet original dans un paquet UDP:4789 (VXLAN)
+    │    Paquet externe : src=10.10.1.100 dst=10.10.1.194 proto=UDP port=4789
+    │    Paquet interne : src=192.168.235.1 dst=192.168.79.131 proto=UDP port=53
+    │
+    ▼
+ens5 (interface physique kube-1) → reseau AWS VPC → ens5 (kube-2)
+    │
+    │ 4. AWS voit un paquet UDP normal entre deux instances de son VPC
+    │    Les IPs source/dest (10.10.1.x) correspondent aux instances → OK
+    │
+    ▼
+vxlan.calico (interface VXLAN sur kube-2)
+    │
+    │ 5. Decapsule le paquet VXLAN → retrouve le paquet original
+    │    src=192.168.235.1 dst=192.168.79.131
+    │
+    ▼
+Pod CoreDNS (192.168.79.131) sur kube-2
+```
+
+### Pourquoi VXLAN et pas du routing direct sur AWS
+
+Sur un reseau classique (bare metal), Calico peut router directement les paquets pods sans encapsulation (`VXLANCrossSubnet` ou `None`). Sur AWS, ca ne marche pas :
+
+1. Un pod envoie un paquet avec `src=192.168.235.1` (IP pod, pas IP instance)
+2. Le noeud forward ce paquet sur `ens5` vers l'autre node
+3. AWS voit un paquet avec une IP source (`192.168.x.x`) qui ne correspond a aucune instance → **drop**
+
+C'est le **source/destination check** d'AWS : chaque ENI (interface reseau) ne peut envoyer/recevoir que des paquets dont l'IP source/dest correspond a l'IP de l'instance. C'est une protection anti-spoofing.
+
+**Solutions possibles :**
+- **VXLAN (notre choix)** : encapsule le trafic pod dans des paquets UDP entre les IPs des instances. AWS voit du trafic normal entre instances.
+- **Desactiver source/dest check** : `source_dest_check = false` sur chaque EC2. Permet le routing direct (plus performant) mais moins securise.
+- **IPIP** : meme principe que VXLAN mais utilise le protocole IP-in-IP (protocole 4). Probleme : les Security Groups AWS ne supportent que TCP/UDP/ICMP, donc IPIP est bloque.
+- **AWS VPC CNI** : le CNI natif d'EKS, attribue des IPs du VPC aux pods (pas d'overlay). Pas compatible avec kubeadm sans configuration avancee.
+
+Voir [doc Calico VXLAN/IPIP](https://docs.tigera.io/calico/latest/networking/configuring/vxlan-ipip).
+
+### VXLAN — fonctionnement
+
+VXLAN (Virtual Extensible LAN) cree un reseau overlay de couche 2 par-dessus un reseau de couche 3 :
+
+```
+┌──────────────────────────────────────────────────┐
+│ Paquet sur le fil (ce qu'AWS voit)                │
+├──────────────────────────────────────────────────┤
+│ Ethernet: src=MAC-kube1  dst=MAC-kube2           │
+│ IP:       src=10.10.1.100 dst=10.10.1.194        │
+│ UDP:      src=random      dst=4789               │
+│ ┌──────────────────────────────────────────────┐ │
+│ │ VXLAN header (8 bytes, VNI = identifiant)    │ │
+│ ├──────────────────────────────────────────────┤ │
+│ │ Ethernet interne (MAC virtuelle Calico)      │ │
+│ │ IP:   src=192.168.235.1 dst=192.168.79.131   │ │
+│ │ UDP:  src=random         dst=53 (DNS)        │ │
+│ │ Payload: requete DNS                         │ │
+│ └──────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────┘
+```
+
+- **VNI (VXLAN Network Identifier)** : identifie le reseau virtuel. Calico utilise un VNI par defaut pour tout le cluster.
+- **Port UDP 4789** : port standard VXLAN (Calico utilise 8472 par convention Linux, d'ou la regle dans le Security Group).
+- **Overhead** : ~50 bytes par paquet (headers Ethernet + IP + UDP + VXLAN). C'est pourquoi le MTU de `vxlan.calico` est reduit (`8951` au lieu de `9001` sur AWS).
+
+### Parcours d'une requete HTTP externe (Ingress)
+
+```
+Client (Internet)
+    │
+    │ 1. HTTP GET http://monapp.example.com
+    │    DNS → IP publique du node ingress
+    │
+    ▼
+AWS Internet Gateway → Security Group public_nodes (port 80 OK)
+    │
+    ▼
+Node ingress (ens5, IP publique)
+    │
+    │ 2. Nginx Ingress ecoute en hostNetwork sur le port 80
+    │    Matche la regle Ingress pour monapp.example.com
+    │    Forward vers le Service ClusterIP du backend
+    │
+    ▼
+kube-proxy (iptables sur le node ingress)
+    │
+    │ 3. DNAT : ClusterIP du service → IP du pod backend
+    │
+    ▼
+Calico VXLAN (si le pod est sur un autre node)
+    │
+    │ 4. Encapsule et envoie au bon node
+    │
+    ▼
+Pod backend (repond)
+```
+
+**Pourquoi `hostNetwork: true` ?** Le pod Nginx partage le network namespace du node. Il ecoute directement sur les ports 80/443 de l'IP publique du node, sans passer par un Service NodePort ou LoadBalancer (on n'a pas d'ELB AWS). C'est plus simple et plus performant (pas de double NAT).
+
+**Pourquoi `dnsPolicy: ClusterFirstWithHostNet` ?** Quand un pod est en `hostNetwork`, sa `dnsPolicy` par defaut est `Default` (= utilise le DNS du node, `/etc/resolv.conf` = `127.0.0.53` systemd-resolved). Mais Nginx Ingress a besoin de resoudre les Services Kubernetes (ex: `monapp.default.svc.cluster.local`). `ClusterFirstWithHostNet` force l'utilisation de CoreDNS (`10.96.0.10`) meme en hostNetwork.
+
+### Debug reseau — commandes utiles
+
+```bash
+# Verifier les interfaces reseau sur un node
+ip link show                          # ens5 (physique) + vxlan.calico (overlay) + cali* (veth pods)
+ip addr show vxlan.calico             # IP VTEP du node sur le reseau overlay
+
+# Routes Calico (comment le node sait ou envoyer les paquets pods)
+ip route | grep -E "192.168|vxlan"    # routes vers les blocs /26 des autres nodes
+
+# Verifier la connectivite pod-to-pod
+kubectl run test --rm -it --restart=Never --image=busybox -- ping -c3 <IP-pod-autre-node>
+
+# Verifier la resolution DNS depuis un pod
+kubectl run test --rm -it --restart=Never --image=busybox -- nslookup kubernetes.default.svc.cluster.local
+
+# Regles iptables kube-proxy pour un service
+sudo iptables -t nat -L KUBE-SERVICES | grep <nom-service>
+sudo iptables -t nat -L KUBE-SVC-XXXXX                      # voir les endpoints (pods) derriere le service
+
+# Verifier le trafic VXLAN en temps reel
+sudo tcpdump -i ens5 udp port 8472 -n                       # trafic VXLAN encapsule entre nodes
+
+# Etat Calico
+kubectl get ippools.crd.projectcalico.org -o yaml            # config des IP pools
+kubectl get felixconfiguration default -o yaml               # config du dataplane Calico
+calicoctl node status                                        # peering BGP (si utilise) ou VXLAN status
+```
+
+---
+
+## CI/CD
+
+### GitHub Actions (`.github/workflows/lint.yml`)
+
+Pipeline de validation automatique sur chaque push/PR vers `main`. 4 jobs en parallele :
+
+| Job | Outil | Ce qu'il valide |
+|---|---|---|
+| **yaml-lint** | yamllint | Syntaxe et formatage de tous les YAML du repo |
+| **terraform** | `terraform fmt` + `validate` | Formatage HCL + validite de la configuration Terraform (sans credentials, `--backend=false`) |
+| **ansible-lint** | ansible-lint | Bonnes pratiques Ansible (idempotence, permissions, modules, etc.) |
+| **kubeconform** | kubeconform | Validite des CRDs ArgoCD dans `apps/` contre les schemas JSON (catch les typos avant qu'ArgoCD sync) |
+
+### Pre-commit (`.pre-commit-config.yaml`)
+
+Memes validations qu'en CI mais executees **localement avant chaque commit**. Empeche de push du code qui casserait la pipeline.
+
+```bash
+# Installation
+pip install pre-commit
+pre-commit install
+
+# Lancer manuellement sur tous les fichiers
+pre-commit run --all-files
+```
+
+Hooks inclus :
+- **trailing-whitespace** / **end-of-file-fixer** : nettoyage automatique
+- **check-yaml** : syntaxe YAML valide
+- **check-merge-conflict** : detecte les marqueurs de conflit oublies (`<<<<<<<`)
+- **detect-private-key** : empeche de commit des cles privees par accident
+- **yamllint** : lint YAML avec la config `.yamllint.yml`
+- **terraform_fmt** / **terraform_validate** : formatage + validation Terraform
+- **ansible-lint** : lint Ansible
+
+---
+
 ## Prerequis
 
 - Terraform >= 1.14
-- Ansible + collections `community.general`, `ansible.posix`
+- Ansible (pas de collections externes requises, tout utilise `ansible.builtin`)
 - AWS CLI configure avec un profil ayant les droits EC2/VPC/SSM/S3/IAM
 - Cle SSH `~/.ssh/id_ed25519` (ou modifier `ssh_public_key_path` dans les variables)
 - Bucket S3 `logs69` existant (pour le tfstate)

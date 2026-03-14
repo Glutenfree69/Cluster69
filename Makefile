@@ -7,7 +7,7 @@ SSM_PARAM = /kubequest/kubeconfig
 all: infra cluster ## Deploy infra + provision cluster
 
 infra: ## Deploy AWS infrastructure (generates Ansible inventory)
-	cd terraform && terraform init -upgrade && terraform apply
+	cd terraform && terraform init -upgrade && terraform apply -auto-approve
 
 cluster: ## Provision Kubernetes cluster via Ansible
 	cd ansible && ansible-playbook playbook.yml

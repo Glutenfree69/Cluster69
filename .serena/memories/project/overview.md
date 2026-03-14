@@ -1,77 +1,65 @@
 # KubeQuest - Project Overview
 
 ## Purpose
-Cluster Kubernetes self-managed (kubeadm) sur AWS avec Traefik. Workflow GitOps complet avec Helm + ArgoCD. L'app déployée sera podinfo (webapp Go).
+Cluster Kubernetes self-managed (kubeadm) sur AWS. Workflow GitOps complet avec ArgoCD App of Apps. Provisioning full automatisé via `make all` (Terraform + Ansible).
 
 ## Project Structure
-- `terraform/` — Infrastructure AWS (IaC)
-- `ansible/` — Provisioning cluster kubeadm (à créer)
-- `helm/` — Charts Helm applicatifs (à créer)
-- `argocd/` — App of Apps manifests (à créer)
-- `.github/workflows/` — CI/CD GitHub Actions (à créer)
+- `terraform/` — Infrastructure AWS (VPC, EC2, SSM, Security Groups)
+- `ansible/` — Provisioning cluster kubeadm (6 roles: common, control_plane, worker, calico, helm, argocd)
+- `apps/` — Applications ArgoCD (App of Apps pattern)
+  - `root.yaml` — App of Apps root, surveille ce dossier
+  - `ingress-nginx.yaml` — Nginx Ingress Controller (Helm chart)
+- `.github/workflows/lint.yml` — CI lint/validation (yamllint, terraform, ansible-lint, kubeconform)
+- `.pre-commit-config.yaml` — Pre-commit hooks (mêmes checks qu'en CI, en local)
+- `.yamllint.yml` — Config yamllint
 
 ## Infrastructure (terraform/)
 4 VMs EC2 dans eu-west-3 (Paris) :
 
-| Node | Rôle | Type | Stockage |
-|---|---|---|---|
-| kube-1 | Control plane + worker | t3.medium | 20 GB gp3 |
-| kube-2 | Worker | t3.small | 20 GB gp3 |
-| ingress | Ingress controller (Traefik) | t3.small | 20 GB gp3 |
-| monitoring | Prometheus/Grafana/Loki | t3.medium | 30 GB gp3 |
+| Node | Rôle | Type | Stockage | SG |
+|---|---|---|---|---|
+| kube-1 | Control plane + worker | t3.medium | 20 GB gp3 | k8s_nodes |
+| kube-2 | Worker | t3.small | 20 GB gp3 | k8s_nodes |
+| ingress | Ingress controller (Nginx) | t3.small | 20 GB gp3 | public_nodes |
+| monitoring | Prometheus/Grafana/Loki | t3.medium | 30 GB gp3 | public_nodes |
 
 Coût estimé : ~$97/mois
 
-## Stack GitOps choisie
+## Stack
 
 | Composant | Outil |
 |---|---|
-| Infra | Terraform (existant) |
-| Provisioning | Ansible (kubeadm + containerd + bootstrap) |
-| K8s distro | kubeadm (upstream) |
-| CNI | Calico |
-| Ingress | Traefik (Helm chart officiel) |
-| GitOps | ArgoCD (pattern App of Apps) |
-| Monitoring | kube-prometheus-stack (Helm) |
-| App | Helm chart custom |
-| Registry | GHCR (GitHub Container Registry) |
-| CI/CD | GitHub Actions → commit tag dans values.yaml → ArgoCD sync |
-| Repo | Monorepo |
+| Infra | Terraform (backend S3 bucket `logs69`) |
+| Provisioning | Ansible (kubeadm + containerd) |
+| K8s distro | kubeadm v1.32 |
+| CNI | Calico (VXLAN always — obligatoire sur AWS, source/dest check) |
+| Ingress | Nginx Ingress Controller (DaemonSet, hostNetwork, via ArgoCD) |
+| GitOps | ArgoCD (App of Apps, bootstrappé automatiquement par Ansible) |
+| CI | GitHub Actions (lint/validation uniquement, pas de CD) |
+| Pre-commit | yamllint, terraform fmt/validate, ansible-lint, detect-private-key |
 
-## Flux destroy/recreate
-```
-terraform apply → ansible-playbook → ArgoCD app-of-apps → cluster opérationnel
-terraform destroy → tout supprimé, 0€
-```
+## Réseau — 3 plans
+1. **Nodes** : 10.10.1.0/24 (VPC subnet, interface ens5)
+2. **Pods** : 192.168.0.0/16 (overlay Calico VXLAN, /26 par node)
+3. **Services** : 10.96.0.0/12 (virtuel, iptables kube-proxy)
 
-## Terraform Files
-- `provider.tf` — Provider AWS
-- `terraform.tf` — Backend S3 (bucket `logs69`)
-- `network.tf` — VPC, subnet, IGW, routes
-- `variables.tf` — Variables avec defaults (region eu-west-3, SSH key ed25519)
-- `security.tf` — Key pair SSH, 2 SGs (k8s_nodes + public_nodes), cross-SG rules
-- `instances.tf` — 4 EC2 instances avec user_data (kernel modules, sysctl, swap off)
-- `outputs.tf` — IPs publiques/privées, AMI, commandes SSH, endpoint kubeadm
-- `locals.tf` — User data script (kernel modules, sysctl, swap)
-- `data.tf` — AMI Ubuntu 22.04 lookup
+VXLAN obligatoire sur AWS car les instances droppent les paquets avec IP source != IP instance (source/dest check). IPIP impossible car les SG AWS ne supportent que TCP/UDP/ICMP (pas protocole IP 4).
 
 ## Key Decisions
-- VPC custom (10.10.0.0/16) avec 1 subnet public, 1 seul AZ
-- Pas de NAT Gateway (trop cher), toutes les instances ont une IP publique
-- Pas d'Elastic IP (IPs changent au stop/start, OK pour projet école)
-- gp3 (20% moins cher que gp2)
-- CPU credits "standard" (éviter surprises facturation)
-- 2 Security Groups : k8s_nodes (interne) et public_nodes (DMZ)
-- SSH restreint à my_ip_cidr (variable requise, IPv4 uniquement)
-- State Terraform stocké sur S3 bucket "logs69"
-- AWS EC2 n'accepte PAS les `/` dans les clés de tags (ex: kubernetes.io/... interdit)
-- Pod network CIDR : 192.168.0.0/16 (défaut Calico)
+- VXLAN always (pas VXLANCrossSubnet) — tous les nodes dans le même subnet
+- Pas de collections Ansible externes (community.general, ansible.posix remplacées par ansible.builtin)
+- ArgoCD sur le control plane (tolerations + nodeSelector), Redis inclus
+- Nginx Ingress en hostNetwork (pas de LoadBalancer/NodePort)
+- App of Apps root.yaml : fichier unique dans apps/, référencé par Ansible via playbook_dir (pas de copie)
+- CD géré par ArgoCD (git push → sync auto), CI par GitHub Actions (lint uniquement)
 
-## User Preferences
-- SSH key: ed25519 (pas RSA)
-- Langue: français
-- Style: direct, pas de bullshit
-- Très à l'aise avec K8s/Helm/ArgoCD (fait tourner des charges prod sur EKS)
-- Veut apprendre kubeadm spécifiquement (jamais utilisé)
-- Veut de la documentation explicative sur le fonctionnement de kubeadm
-- Étudiant, budget serré, tout doit être gratuit/pas cher
+## Flux
+```
+make all → terraform apply + ansible-playbook
+  → Infra AWS créée
+  → Cluster kubeadm initialisé
+  → Calico VXLAN configuré
+  → Helm + ArgoCD installés
+  → App of Apps bootstrappée (kubectl apply root.yaml)
+  → ArgoCD sync ingress-nginx automatiquement
+```
