@@ -1,0 +1,78 @@
+---
+- name: Add ArgoCD Helm repository
+  become: false
+  ansible.builtin.command: helm repo add argo https://argoproj.github.io/argo-helm
+  register: repo_add
+  changed_when: "'has been added' in repo_add.stdout"
+  failed_when: false
+
+- name: Update Helm repositories
+  become: false
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: Create argocd namespace
+  become: false
+  ansible.builtin.command: kubectl create namespace argocd
+  register: ns_result
+  changed_when: "'created' in ns_result.stdout"
+  failed_when:
+    - ns_result.rc != 0
+    - "'already exists' not in ns_result.stderr"
+
+- name: Copy ArgoCD values file
+  ansible.builtin.copy:
+    src: values.yaml
+    dest: /tmp/argocd-values.yaml
+    mode: "0644"
+
+- name: Install/upgrade ArgoCD via Helm
+  become: false
+  ansible.builtin.command: >
+    helm upgrade --install argocd argo/argo-cd
+    --namespace argocd
+    --version {{ argocd_chart_version }}
+    --values /tmp/argocd-values.yaml
+    --wait
+    --timeout 5m
+  register: helm_install
+  changed_when: "'STATUS: deployed' in helm_install.stdout"
+
+- name: Wait for ArgoCD server to be ready
+  become: false
+  ansible.builtin.command: >
+    kubectl wait --for=condition=Available
+    deployment/argocd-server
+    --namespace argocd
+    --timeout=120s
+  changed_when: false
+  retries: 3
+  delay: 10
+  register: argocd_ready
+  until: argocd_ready.rc == 0
+
+- name: Get ArgoCD initial admin password
+  become: false
+  ansible.builtin.shell: >
+    kubectl get secret argocd-initial-admin-secret
+    -n argocd
+    -o jsonpath='{.data.password}' | base64 -d
+  register: argocd_password
+  changed_when: false
+
+- name: Clean up values file
+  ansible.builtin.file:
+    path: /tmp/argocd-values.yaml
+    state: absent
+
+- name: Display ArgoCD access information
+  ansible.builtin.debug:
+    msg: |
+      ArgoCD installed successfully!
+
+      Admin username: admin
+      Admin password: {{ argocd_password.stdout }}
+
+      Access UI:
+        kubectl port-forward svc/argocd-server -n argocd 8080:443
+        Then open https://localhost:8080

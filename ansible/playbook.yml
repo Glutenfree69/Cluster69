@@ -1,4 +1,13 @@
 ---
+# --- Wait for instances to be reachable ---
+- name: Wait for instances to be reachable
+  hosts: k8s_cluster
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 120
+
 # --- Common setup on all nodes ---
 - name: Common setup (OS, containerd, kubeadm)
   hosts: k8s_cluster
@@ -89,3 +98,17 @@
         msg: |
           Cluster ready! Kubeconfig pushed to SSM.
           Run: make kubeconfig
+
+# --- Install Helm CLI ---
+- name: Install Helm CLI
+  hosts: control_plane
+  become: true
+  roles:
+    - helm
+
+# --- Install ArgoCD ---
+- name: Install ArgoCD via Helm
+  hosts: control_plane
+  become: true
+  roles:
+    - argocd

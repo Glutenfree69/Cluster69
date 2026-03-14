@@ -7,7 +7,7 @@ SSM_PARAM = /kubequest/kubeconfig
 all: infra cluster ## Deploy infra + provision cluster
 
 infra: ## Deploy AWS infrastructure (generates Ansible inventory)
-	cd terraform && terraform apply
+	cd terraform && terraform init -upgrade && terraform apply
 
 cluster: ## Provision Kubernetes cluster via Ansible
 	cd ansible && ansible-playbook playbook.yml
@@ -27,6 +27,10 @@ kubeconfig: ## Fetch kubeconfig from SSM to ~/.kube/config-kubequest
 	@echo "To use it:"
 	@echo "  export KUBECONFIG=~/.kube/config:$(KUBECONFIG_PATH)"
 	@echo "  kubectl config use-context kubequest"
+
+argocd-password: ## Get ArgoCD admin password
+	@kubectl --kubeconfig $(KUBECONFIG_PATH) get secret argocd-initial-admin-secret \
+		-n argocd -o jsonpath='{.data.password}' | base64 -d && echo
 
 destroy: ## Destroy all AWS infrastructure
 	cd terraform && terraform destroy

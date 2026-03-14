@@ -104,7 +104,9 @@ KubeQuest/
     outputs.tf              # IPs, AMI, commandes SSH, generation de l'inventory Ansible
   ansible/
     ansible.cfg             # Config Ansible (inventory, user, SSH key)
-    playbook.yml            # Playbook principal (4 plays)
+    playbook.yml            # Playbook principal (6 plays)
+    group_vars/
+      all.yml               # Variables globales (versions Helm, ArgoCD, etc.)
     templates/
       kubeconfig.yml.j2     # Template Jinja2 pour le kubeconfig avec contexte "kubequest"
     roles/
@@ -112,6 +114,8 @@ KubeQuest/
       control_plane/        # kubeadm init sur kube-1
       worker/               # kubeadm join sur les workers
       calico/               # Installation CNI Calico + labels + kubeconfig SSM
+      helm/                 # Installation de Helm CLI (version pinee)
+      argocd/               # Deploiement d'ArgoCD via Helm chart
 ```
 
 ---
@@ -165,6 +169,19 @@ sequenceDiagram
         K1-->>AN: slurp admin.conf
         AN->>AN: Template kubeconfig (public_ip + certs)
         AN->>SSM: aws ssm put-parameter (kubeconfig)
+    end
+
+    rect rgb(230, 245, 255)
+        Note over AN,K1: Play 5 — Role helm (kube-1)
+        AN->>K1: Install Helm CLI (get-helm-3, version pinee)
+    end
+
+    rect rgb(245, 230, 255)
+        Note over AN,K1: Play 6 — Role argocd (kube-1)
+        AN->>K1: helm repo add argo
+        AN->>K1: helm upgrade --install argocd (version pinee)
+        AN->>K1: kubectl wait deployment/argocd-server
+        K1-->>AN: Admin password
     end
 
     Dev->>SSM: make kubeconfig
@@ -430,6 +447,40 @@ Processus interne du join :
 - `ingress` : `node-role.kubernetes.io/ingress` (permet des `nodeSelector` pour placer Traefik sur ce node).
 - `monitoring` : `node-role.kubernetes.io/monitoring` (permet des `nodeSelector` pour Prometheus/Grafana/Loki).
 
+### Play 5 : Role `helm` (kube-1)
+
+Installe Helm CLI sur le control plane. La version est pinee dans `group_vars/all.yml`.
+
+- Verifie si Helm est deja installe (`helm version --short`).
+- Si non : telecharge le script officiel `get-helm-3` et l'execute avec `DESIRED_VERSION={{ helm_version }}`.
+- Nettoie le script apres installation.
+
+### Play 6 : Role `argocd` (kube-1)
+
+Deploie ArgoCD via Helm chart. La version du chart est pinee dans `group_vars/all.yml`.
+
+1. Ajoute le repo Helm `argo` (`https://argoproj.github.io/argo-helm`).
+2. `helm repo update` pour recuperer les derniers index.
+3. Cree le namespace `argocd`.
+4. `helm upgrade --install argocd argo/argo-cd --version {{ argocd_chart_version }}` avec un fichier `values.yaml`.
+5. Attend que le deployment `argocd-server` soit disponible.
+6. Recupere et affiche le mot de passe admin initial.
+
+**Configuration (values.yaml)** :
+- **`global.tolerations`** + **`global.nodeSelector`** : tous les composants ArgoCD tournent sur le control plane (kube-1). La toleration autorise le scheduling malgre le taint `NoSchedule`, le nodeSelector force le placement.
+- **Service ClusterIP** (par defaut) : acces via `kubectl port-forward svc/argocd-server -n argocd 8080:443`.
+- **Resource requests/limits** : dimensionnes pour un petit cluster.
+
+**Gestion des versions** :
+
+Les versions sont centralisees dans `ansible/group_vars/all.yml` :
+```yaml
+helm_version: "v4.1.3"
+argocd_chart_version: "9.4.10"
+```
+
+Pour monter de version : modifier ce fichier et relancer `make cluster`.
+
 **Kubeconfig SSM** :
 1. `slurp` lit `/etc/kubernetes/admin.conf` depuis kube-1 (base64).
 2. Le template Jinja2 (`kubeconfig.yml.j2`) reconstruit un kubeconfig propre :
@@ -449,6 +500,7 @@ Processus interne du join :
 | `make infra` | `terraform apply` (cree l'infra + genere l'inventory Ansible) |
 | `make cluster` | `ansible-playbook playbook.yml` (provisionne le cluster) |
 | `make kubeconfig` | Fetch le kubeconfig depuis SSM vers `~/.kube/config-kubequest` |
+| `make argocd-password` | Affiche le mot de passe admin initial d'ArgoCD |
 | `make destroy` | `terraform destroy` (supprime toute l'infra) |
 
 ---
@@ -475,6 +527,11 @@ kubectl logs -n kube-system <pod>
 journalctl -u kubelet -f            # sur le node, logs kubelet temps reel
 crictl ps                            # containers geres par containerd
 crictl logs <container-id>
+
+# ArgoCD
+kubectl get pods -n argocd
+make argocd-password
+kubectl port-forward svc/argocd-server -n argocd 8080:443  # UI sur https://localhost:8080
 
 # Certificats
 kubeadm certs check-expiration
