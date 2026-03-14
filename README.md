@@ -30,7 +30,7 @@ flowchart TB
             subgraph SUBNET["Subnet public 10.10.1.0/24 — eu-west-3a"]
                 K1["<b>kube-1</b><br/>t3.medium (4 GB)<br/>Control Plane + Worker<br/>etcd, API server,<br/>scheduler, controller-manager"]
                 K2["<b>kube-2</b><br/>t3.small (2 GB)<br/>Worker"]
-                IG["<b>ingress</b><br/>t3.small (2 GB)<br/>Ingress Controller (Traefik)"]
+                IG["<b>ingress</b><br/>t3.small (2 GB)<br/>Ingress Controller (Nginx)"]
                 MO["<b>monitoring</b><br/>t3.medium (4 GB)<br/>Prometheus / Grafana / Loki"]
             end
             IGW["Internet Gateway"]
@@ -67,7 +67,7 @@ flowchart TB
 |---|---|---|---|---|---|
 | kube-1 | Control plane + worker | t3.medium | 4 GB | 20 GB gp3 | k8s_nodes |
 | kube-2 | Worker | t3.small | 2 GB | 20 GB gp3 | k8s_nodes |
-| ingress | Ingress controller (Traefik) | t3.small | 2 GB | 20 GB gp3 | public_nodes |
+| ingress | Ingress controller (Nginx) | t3.small | 2 GB | 20 GB gp3 | public_nodes |
 | monitoring | Prometheus / Grafana / Loki | t3.medium | 4 GB | 30 GB gp3 | public_nodes |
 
 **Cout estime : ~$97/mois**
@@ -92,6 +92,9 @@ flowchart TB
 ```
 KubeQuest/
   Makefile                  # Orchestration globale (make all / make kubeconfig / make destroy)
+  apps/                     # Applications ArgoCD (App of Apps pattern)
+    root.yaml               # App of Apps root — surveille ce dossier
+    ingress-nginx.yaml      # Nginx Ingress Controller (Helm chart)
   terraform/                # Infrastructure AWS
     terraform.tf            # Version Terraform + providers + backend S3
     provider.tf             # Config du provider AWS (region, tags par defaut)
@@ -444,7 +447,7 @@ Processus interne du join :
 
 **Labels des nodes** :
 - `kube-2` : `node-role.kubernetes.io/worker` (affichage dans `kubectl get nodes`).
-- `ingress` : `node-role.kubernetes.io/ingress` (permet des `nodeSelector` pour placer Traefik sur ce node).
+- `ingress` : `node-role.kubernetes.io/ingress` (permet des `nodeSelector` pour placer Nginx Ingress sur ce node).
 - `monitoring` : `node-role.kubernetes.io/monitoring` (permet des `nodeSelector` pour Prometheus/Grafana/Loki).
 
 ### Play 5 : Role `helm` (kube-1)
@@ -465,6 +468,7 @@ Deploie ArgoCD via Helm chart. La version du chart est pinee dans `group_vars/al
 4. `helm upgrade --install argocd argo/argo-cd --version {{ argocd_chart_version }}` avec un fichier `values.yaml`.
 5. Attend que le deployment `argocd-server` soit disponible.
 6. Recupere et affiche le mot de passe admin initial.
+7. Bootstrap l'App of Apps : `kubectl apply -f root.yaml` (deploie automatiquement toutes les apps du dossier `apps/`).
 
 **Configuration (values.yaml)** :
 - **`global.tolerations`** + **`global.nodeSelector`** : tous les composants ArgoCD tournent sur le control plane (kube-1). La toleration autorise le scheduling malgre le taint `NoSchedule`, le nodeSelector force le placement.
@@ -502,6 +506,71 @@ Pour monter de version : modifier ce fichier et relancer `make cluster`.
 | `make kubeconfig` | Fetch le kubeconfig depuis SSM vers `~/.kube/config-kubequest` |
 | `make argocd-password` | Affiche le mot de passe admin initial d'ArgoCD |
 | `make destroy` | `terraform destroy` (supprime toute l'infra) |
+
+---
+
+## GitOps — App of Apps (ArgoCD)
+
+Le cluster utilise le pattern **App of Apps** : une Application ArgoCD "root" surveille le dossier `apps/` du repo Git. Toute nouvelle Application pushee dans ce dossier est automatiquement deployee par ArgoCD.
+
+### Structure
+
+```
+apps/
+  root.yaml                # App of Apps — surveille ce dossier (bootstrap auto via Ansible)
+  ingress-nginx.yaml       # Application CRD → chart Helm ingress-nginx
+```
+
+### Flow GitOps
+
+```
+git push (apps/nouvelle-app.yaml)
+    │
+    ▼
+ArgoCD (surveille le repo Git)
+    │  Detecte le nouveau fichier dans apps/
+    ▼
+ArgoCD cree l'Application
+    │  Telecharge le chart Helm + applique les values
+    ▼
+App deployee sur le cluster
+```
+
+### Ajouter une nouvelle app
+
+```bash
+# 1. Creer le fichier Application CRD dans apps/
+vim apps/podinfo.yaml
+
+# 2. Push
+git add apps/podinfo.yaml && git commit -m "Add podinfo" && git push
+
+# 3. ArgoCD detecte et deploie automatiquement — rien d'autre a faire
+```
+
+### Verification
+
+```bash
+# Applications ArgoCD (root + ingress-nginx en Synced/Healthy)
+kubectl get applications -n argocd
+
+# Pods ingress-nginx
+kubectl get pods -n ingress-nginx
+
+# IngressClass par defaut
+kubectl get ingressclass
+
+# Test ingress (404 = nginx fonctionne, pas de regle Ingress configuree)
+curl -I http://<IP-publique-ingress>
+```
+
+### Nginx Ingress Controller
+
+Deploye en **DaemonSet** sur le node `ingress` via `hostNetwork: true` (ports 80/443 directement sur l'IP publique du node). Configuration :
+- **nodeSelector** : `node-role.kubernetes.io/ingress: ""` — tourne uniquement sur le node ingress
+- **service disabled** : pas de Service LoadBalancer (on utilise hostNetwork)
+- **IngressClass `nginx`** : definie comme default
+- **admissionWebhooks** : valide les ressources Ingress avant application
 
 ---
 

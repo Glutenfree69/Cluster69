@@ -76,3 +76,20 @@
       Access UI:
         kubectl port-forward svc/argocd-server -n argocd 8080:443
         Then open https://localhost:8080
+
+- name: Copy App of Apps root manifest
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../apps/root.yaml"
+    dest: /tmp/argocd-root-app.yaml
+    mode: "0644"
+
+- name: Bootstrap App of Apps
+  become: false
+  ansible.builtin.command: kubectl apply -f /tmp/argocd-root-app.yaml
+  register: root_app_result
+  changed_when: "'created' in root_app_result.stdout or 'configured' in root_app_result.stdout"
+
+- name: Clean up root app manifest
+  ansible.builtin.file:
+    path: /tmp/argocd-root-app.yaml
+    state: absent
