@@ -16,8 +16,7 @@ spec:
           enabled: true
           className: ""
           hosts:
-            - host: podinfo.local
-              paths:
+            - paths:
                 - path: /
                   pathType: Prefix
   destination:
