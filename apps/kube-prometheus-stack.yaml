@@ -78,6 +78,32 @@ spec:
             server:
               root_url: "http://%(domain)s/grafana/"
               serve_from_sub_path: true
+          dashboardProviders:
+            dashboardproviders.yaml:
+              apiVersion: 1
+              providers:
+                - name: default
+                  orgId: 1
+                  folder: ""
+                  type: file
+                  disableDeletion: false
+                  editable: true
+                  options:
+                    path: /var/lib/grafana/dashboards/default
+          dashboards:
+            default:
+              loki-logs:
+                gnetId: 13639
+                revision: 2
+                datasource: Loki
+              node-exporter-full:
+                gnetId: 1860
+                revision: 37
+                datasource: Prometheus
+              k8s-pod-monitoring:
+                gnetId: 17375
+                revision: 1
+                datasource: Prometheus
           additionalDataSources:
             - name: Loki
               type: loki
