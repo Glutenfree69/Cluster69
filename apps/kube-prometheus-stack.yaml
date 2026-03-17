@@ -93,8 +93,8 @@ spec:
           dashboards:
             default:
               loki-logs:
-                gnetId: 13639
-                revision: 2
+                gnetId: 13186
+                revision: 1
                 datasource: Loki
               node-exporter-full:
                 gnetId: 1860
