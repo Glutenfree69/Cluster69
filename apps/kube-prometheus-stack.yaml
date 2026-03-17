@@ -100,9 +100,9 @@ spec:
                 gnetId: 1860
                 revision: 37
                 datasource: Prometheus
-              k8s-pod-monitoring:
-                gnetId: 17375
-                revision: 1
+              k8s-views-pods:
+                gnetId: 15760
+                revision: 37
                 datasource: Prometheus
           additionalDataSources:
             - name: Loki
