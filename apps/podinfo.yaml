@@ -12,6 +12,7 @@ spec:
     targetRevision: "6.11.1"
     helm:
       values: |
+        logLevel: info
         ingress:
           enabled: true
           className: ""

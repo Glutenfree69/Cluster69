@@ -100,12 +100,6 @@ spec:
                 gnetId: 15760
                 revision: 37
                 datasource: Prometheus
-              loki-logs:
-                gnetId: 13639
-                revision: 2
-                datasource:
-                  - name: DS_LOKI
-                    value: Loki
           additionalDataSources:
             - name: Loki
               type: loki
