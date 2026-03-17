@@ -92,10 +92,6 @@ spec:
                     path: /var/lib/grafana/dashboards/default
           dashboards:
             default:
-              loki-logs:
-                gnetId: 13186
-                revision: 1
-                datasource: Loki
               node-exporter-full:
                 gnetId: 1860
                 revision: 37
@@ -104,6 +100,12 @@ spec:
                 gnetId: 15760
                 revision: 37
                 datasource: Prometheus
+              loki-logs:
+                gnetId: 13639
+                revision: 2
+                datasource:
+                  - name: DS_LOKI
+                    value: Loki
           additionalDataSources:
             - name: Loki
               type: loki

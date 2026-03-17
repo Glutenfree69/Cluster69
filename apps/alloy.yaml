@@ -12,37 +12,42 @@ spec:
     helm:
       values: |
         alloy:
+          mounts:
+            varlog: true
           configMap:
             content: |
-              // Discover Kubernetes pods
-              discovery.kubernetes "pods" {
-                role = "pod"
+              // Discover pod log files on each node
+              // Path format: /var/log/pods/<namespace>_<pod>_<uid>/<container>/<N>.log
+              local.file_match "pods" {
+                path_targets = [{ __path__ = "/var/log/pods/*/*/*.log" }]
               }
 
-              // Relabel to extract metadata
+              // Extract namespace, pod, container from file path
               discovery.relabel "pods" {
-                targets = discovery.kubernetes.pods.targets
+                targets = local.file_match.pods.targets
 
                 rule {
-                  source_labels = ["__meta_kubernetes_namespace"]
+                  source_labels = ["__path__"]
+                  regex         = "/var/log/pods/([^_]+)_([^_]+)_[^/]+/([^/]+)/.*\\.log"
                   target_label  = "namespace"
+                  replacement   = "$1"
                 }
                 rule {
-                  source_labels = ["__meta_kubernetes_pod_name"]
+                  source_labels = ["__path__"]
+                  regex         = "/var/log/pods/([^_]+)_([^_]+)_[^/]+/([^/]+)/.*\\.log"
                   target_label  = "pod"
+                  replacement   = "$2"
                 }
                 rule {
-                  source_labels = ["__meta_kubernetes_pod_container_name"]
+                  source_labels = ["__path__"]
+                  regex         = "/var/log/pods/([^_]+)_([^_]+)_[^/]+/([^/]+)/.*\\.log"
                   target_label  = "container"
-                }
-                rule {
-                  source_labels = ["__meta_kubernetes_pod_node_name"]
-                  target_label  = "node"
+                  replacement   = "$3"
                 }
               }
 
-              // Collect logs from pods
-              loki.source.kubernetes "pods" {
+              // Read log files and forward to Loki
+              loki.source.file "pods" {
                 targets    = discovery.relabel.pods.output
                 forward_to = [loki.write.default.receiver]
               }
