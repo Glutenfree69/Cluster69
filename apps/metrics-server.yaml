@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes-sigs.github.io/metrics-server/
+    chart: metrics-server
+    targetRevision: "3.13.0"
+    helm:
+      values: |
+        args:
+          - --kubelet-insecure-tls
+        nodeSelector:
+          node-role.kubernetes.io/monitoring: ""
+        tolerations:
+          - key: node-role.kubernetes.io/monitoring
+            operator: Exists
+            effect: NoSchedule
+        resources:
+          requests:
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

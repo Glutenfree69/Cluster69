@@ -1,0 +1,99 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: "6.55.0"
+    helm:
+      values: |
+        deploymentMode: SingleBinary
+
+        loki:
+          auth_enabled: false
+          commonConfig:
+            replication_factor: 1
+          schemaConfig:
+            configs:
+              - from: "2024-01-01"
+                store: tsdb
+                object_store: filesystem
+                schema: v13
+                index:
+                  prefix: loki_index_
+                  period: 24h
+          storage:
+            type: filesystem
+          limits_config:
+            retention_period: 72h
+
+        singleBinary:
+          replicas: 1
+          nodeSelector:
+            node-role.kubernetes.io/monitoring: ""
+          tolerations:
+            - key: node-role.kubernetes.io/monitoring
+              operator: Exists
+              effect: NoSchedule
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          persistence:
+            enabled: true
+            storageClass: local-path
+            size: 5Gi
+
+        gateway:
+          nodeSelector:
+            node-role.kubernetes.io/monitoring: ""
+          tolerations:
+            - key: node-role.kubernetes.io/monitoring
+              operator: Exists
+              effect: NoSchedule
+          resources:
+            requests:
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+
+        # Disable components not needed in SingleBinary mode
+        backend:
+          replicas: 0
+        read:
+          replicas: 0
+        write:
+          replicas: 0
+
+        # Disable self-monitoring and tests
+        monitoring:
+          selfMonitoring:
+            enabled: false
+            grafanaAgent:
+              installOperator: false
+          lokiCanary:
+            enabled: false
+
+        # Disable minio
+        minio:
+          enabled: false
+
+        # Chunk cache and results cache disabled for small clusters
+        chunksCache:
+          enabled: false
+        resultsCache:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

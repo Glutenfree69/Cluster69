@@ -1,19 +1,6 @@
 # KubeQuest
 
-Cluster Kubernetes self-managed (kubeadm) sur AWS, provisionne from scratch avec Terraform + Ansible.
-
-## Quick Start
-
-```bash
-# 1. Deployer l'infra AWS + provisionner le cluster (admin)
-make all
-
-# 2. Recuperer le kubeconfig depuis SSM (tout le monde)
-make kubeconfig
-export KUBECONFIG=~/.kube/config:~/.kube/config-kubequest
-kubectl config use-context kubequest
-kubectl get nodes
-```
+Cluster Kubernetes self-managed (kubeadm) sur AWS, provisionné from scratch avec Terraform + Ansible. GitOps via ArgoCD (App of Apps).
 
 ## Architecture
 
@@ -28,25 +15,25 @@ flowchart TB
     subgraph AWS["AWS eu-west-3"]
         subgraph VPC["VPC 10.10.0.0/16"]
             subgraph SUBNET["Subnet public 10.10.1.0/24 — eu-west-3a"]
-                K1["<b>kube-1</b><br/>t3.medium (4 GB)<br/>Control Plane + Worker<br/>etcd, API server,<br/>scheduler, controller-manager"]
-                K2["<b>kube-2</b><br/>t3.small (2 GB)<br/>Worker"]
-                IG["<b>ingress</b><br/>t3.small (2 GB)<br/>Ingress Controller (Nginx)"]
-                MO["<b>monitoring</b><br/>t3.medium (4 GB)<br/>Prometheus / Grafana / Loki"]
+                K1["<b>kube-1</b><br/>t3.medium · 4 GB<br/>Control Plane + Worker"]
+                K2["<b>kube-2</b><br/>t3.small · 2 GB<br/>Worker"]
+                IG["<b>ingress</b><br/>t3.small · 2 GB<br/>Ingress Controller"]
+                MO["<b>monitoring</b><br/>t3.medium · 4 GB<br/>Prometheus · Grafana · Loki"]
             end
             IGW["Internet Gateway"]
         end
         SSM["SSM Parameter Store<br/>/kubequest/kubeconfig"]
-        S3["S3 bucket logs69<br/>Terraform state"]
+        S3["S3 — Terraform state"]
     end
 
     TF -- "terraform apply" --> VPC
     TF -- "tfstate" --> S3
-    TF -- "genere inventory" --> AN
-    AN -- "SSH (ubuntu)" --> K1
-    AN -- "SSH (ubuntu)" --> K2
-    AN -- "SSH (ubuntu)" --> IG
-    AN -- "SSH (ubuntu)" --> MO
-    AN -- "push kubeconfig" --> SSM
+    TF -- "inventory" --> AN
+    AN -- "SSH" --> K1
+    AN -- "SSH" --> K2
+    AN -- "SSH" --> IG
+    AN -- "SSH" --> MO
+    AN -- "kubeconfig" --> SSM
     KC -- "kubectl (6443)" --> K1
 
     K1 -- "kubeadm join" --> K2
@@ -61,770 +48,96 @@ flowchart TB
     style MO fill:#d94a7a,color:#fff
 ```
 
-### Tableau des nodes
-
-| Node | Role | Instance | RAM | Stockage | Security Group |
+| Node | Role | Instance | RAM | Disque | SG |
 |---|---|---|---|---|---|
-| kube-1 | Control plane + worker | t3.medium | 4 GB | 20 GB gp3 | k8s_nodes |
-| kube-2 | Worker | t3.small | 2 GB | 20 GB gp3 | k8s_nodes |
-| ingress | Ingress controller (Nginx) | t3.small | 2 GB | 20 GB gp3 | public_nodes |
-| monitoring | Prometheus / Grafana / Loki | t3.medium | 4 GB | 30 GB gp3 | public_nodes |
+| kube-1 | Control plane + worker | t3.medium | 4 GB | 20 GB | k8s_nodes |
+| kube-2 | Worker | t3.small | 2 GB | 20 GB | k8s_nodes |
+| ingress | Ingress controller (Nginx) | t3.small | 2 GB | 20 GB | public_nodes |
+| monitoring | Prometheus / Grafana / Loki | t3.medium | 4 GB | 30 GB | public_nodes |
 
 **Cout estime : ~$97/mois**
 
-### kubeadm vs EKS
+## Stack applicative
 
-| Composant | EKS (manage) | kubeadm (ici) |
-|---|---|---|
-| etcd | Gere par AWS, multi-AZ | Static pod sur kube-1, single node |
-| API Server | Endpoint manage, HA | Static pod, on gere les certs |
-| Scheduler / Controller Manager | Invisible, gere par AWS | Static pods qu'on peut inspecter |
-| Kubelet | AMI optimisee, pre-configure | On installe et configure nous-memes |
-| CNI | VPC CNI (integre aux ENI AWS) | Calico (overlay VXLAN) |
-| Certificats | Geres automatiquement | kubeadm genere, rotation manuelle |
-| Upgrades | `eksctl upgrade` | `kubeadm upgrade` noeud par noeud |
-| Node groups | Managed/Fargate | On join manuellement chaque noeud |
+Deploye automatiquement par ArgoCD via le dossier `apps/` (App of Apps pattern).
 
----
-
-## Arborescence du projet
-
-```
-KubeQuest/
-  Makefile                  # Orchestration globale (make all / make kubeconfig / make destroy)
-  apps/                     # Applications ArgoCD (App of Apps pattern)
-    root.yaml               # App of Apps root — surveille ce dossier
-    ingress-nginx.yaml      # Nginx Ingress Controller (Helm chart)
-  terraform/                # Infrastructure AWS
-    terraform.tf            # Version Terraform + providers + backend S3
-    provider.tf             # Config du provider AWS (region, tags par defaut)
-    data.tf                 # Data source pour l'AMI Ubuntu
-    variables.tf            # Toutes les variables avec valeurs par defaut
-    network.tf              # VPC, subnet, Internet Gateway, route table
-    security.tf             # Key pair SSH, Security Groups (k8s_nodes + public_nodes)
-    instances.tf            # 4 instances EC2
-    ssm.tf                  # SSM Parameter Store pour le kubeconfig + IAM policy
-    outputs.tf              # IPs, AMI, commandes SSH, generation de l'inventory Ansible
-  ansible/
-    ansible.cfg             # Config Ansible (inventory, user, SSH key)
-    playbook.yml            # Playbook principal (6 plays)
-    group_vars/
-      all.yml               # Variables globales (versions Helm, ArgoCD, etc.)
-    templates/
-      kubeconfig.yml.j2     # Template Jinja2 pour le kubeconfig avec contexte "kubequest"
-    roles/
-      common/               # Setup OS sur tous les nodes
-      control_plane/        # kubeadm init sur kube-1
-      worker/               # kubeadm join sur les workers
-      calico/               # Installation CNI Calico + labels + kubeconfig SSM
-      helm/                 # Installation de Helm CLI (version pinee)
-      argocd/               # Deploiement d'ArgoCD via Helm chart
-```
-
----
-
-## Flow de deploiement complet
-
-```mermaid
-sequenceDiagram
-    participant Dev as Poste local
-    participant TF as Terraform
-    participant AWS as AWS
-    participant AN as Ansible
-    participant K1 as kube-1
-    participant W as Workers (x3)
-    participant SSM as SSM
-
-    Dev->>TF: make infra (terraform apply)
-    TF->>AWS: Cree VPC, subnet, IGW, route table
-    TF->>AWS: Cree Security Groups (k8s_nodes + public_nodes)
-    TF->>AWS: Cree 4 instances EC2
-    TF->>AWS: Cree SSM parameter (placeholder)
-    TF->>AN: Genere ansible/inventory/hosts.ini
-
-    Dev->>AN: make cluster (ansible-playbook)
-
-    rect rgb(240, 240, 255)
-        Note over AN,W: Play 1 — Role common (tous les nodes)
-        AN->>K1: apt upgrade, hostname, kernel modules
-        AN->>K1: sysctl (bridge-nf-call, ip_forward)
-        AN->>K1: swap off, containerd + SystemdCgroup
-        AN->>K1: kubeadm + kubelet + kubectl v1.32
-        AN->>W: (idem sur les 3 workers)
-    end
-
-    rect rgb(240, 255, 240)
-        Note over AN,K1: Play 2 — Role control_plane (kube-1)
-        AN->>K1: kubeadm init (--pod-network-cidr, --apiserver-advertise-address)
-        K1-->>AN: join command (token + hash)
-    end
-
-    rect rgb(255, 240, 240)
-        Note over AN,W: Play 3 — Role worker (kube-2, ingress, monitoring)
-        AN->>W: kubeadm join --node-name=<hostname>
-    end
-
-    rect rgb(255, 255, 230)
-        Note over AN,K1: Play 4 — Role calico + finalisation
-        AN->>K1: kubectl apply tigera-operator + Calico CR
-        AN->>K1: kubectl wait --for=condition=Ready
-        AN->>K1: kubectl label nodes (worker, ingress, monitoring)
-        K1-->>AN: slurp admin.conf
-        AN->>AN: Template kubeconfig (public_ip + certs)
-        AN->>SSM: aws ssm put-parameter (kubeconfig)
-    end
-
-    rect rgb(230, 245, 255)
-        Note over AN,K1: Play 5 — Role helm (kube-1)
-        AN->>K1: Install Helm CLI (get-helm-3, version pinee)
-    end
-
-    rect rgb(245, 230, 255)
-        Note over AN,K1: Play 6 — Role argocd (kube-1)
-        AN->>K1: helm repo add argo
-        AN->>K1: helm upgrade --install argocd (version pinee)
-        AN->>K1: kubectl wait deployment/argocd-server
-        K1-->>AN: Admin password
-    end
-
-    Dev->>SSM: make kubeconfig
-    SSM-->>Dev: ~/.kube/config-kubequest
-    Dev->>K1: kubectl get nodes
-```
-
----
-
-## Terraform en detail
-
-### `terraform.tf` — Backend et versions
-
-```hcl
-terraform {
-  required_version = ">= 1.14.0"
-  required_providers {
-    aws = { source = "hashicorp/aws", version = "~> 6.0" }
-  }
-  backend "s3" {
-    bucket = "logs69"
-    key    = "kubequest/terraform.tfstate"
-    region = "eu-west-3"
-  }
-}
-```
-
-- **`required_version >= 1.14.0`** : impose une version minimum de Terraform pour garantir la compatibilite des features utilisees.
-- **`backend "s3"`** : le state Terraform est stocke dans S3 (`logs69/kubequest/terraform.tfstate`) au lieu d'un fichier local. Ca permet le travail collaboratif et evite de perdre le state si le poste local crame. Le bucket doit exister avant le `terraform init`.
-
-### `provider.tf` — Provider AWS
-
-```hcl
-provider "aws" {
-  region = var.aws_region
-  default_tags {
-    tags = {
-      Project     = var.project_name
-      ManagedBy   = "Terraform"
-      Environment = "Jagermeister"
-    }
-  }
-}
-```
-
-- **`region = var.aws_region`** : `eu-west-3` (Paris) par defaut. Toutes les resources sont creees dans cette region.
-- **`default_tags`** : ces tags sont automatiquement appliques a **toutes** les resources crees par ce provider. Evite la repetition et permet de filtrer/trier dans la console AWS. `ManagedBy = "Terraform"` signale que la resource est geree par IaC (ne pas toucher a la main).
-
-### `data.tf` — AMI Ubuntu
-
-```hcl
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"]  # Canonical
-  filter { name = "name"; values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"] }
-  filter { name = "virtualization-type"; values = ["hvm"] }
-  filter { name = "architecture"; values = ["x86_64"] }
-}
-```
-
-- **Data source** (pas une resource) : interroge l'API AWS pour trouver la derniere AMI Ubuntu 22.04 LTS publiee par Canonical. Pas besoin de hardcoder un AMI ID qui change a chaque patch.
-- **`owners = ["099720109477"]`** : l'account ID officiel de Canonical. Securite : on ne prend que les AMI publiees par l'editeur officiel.
-- **`most_recent = true`** : prend la plus recente qui matche les filtres (derniers patches de securite).
-- **`hvm`** : Hardware Virtual Machine, le type de virtualisation standard sur AWS (vs `paravirtual` qui est legacy).
-
-### `network.tf` — VPC, Subnet, Internet Gateway
-
-**VPC** (`10.10.0.0/16` = 65 536 IPs) :
-- **`enable_dns_support`** : les instances peuvent resoudre les DNS internes AWS (ex: `ip-10-10-1-5.eu-west-3.compute.internal`).
-- **`enable_dns_hostnames`** : les instances avec IP publique recoivent un hostname DNS public (requis pour que les nodes se resolvent entre eux).
-- **Tag `kubernetes.io/cluster/kubequest = "owned"`** : convention Kubernetes. Indique que ce VPC appartient au cluster. Necessaire si on utilise un Cloud Controller Manager ou un ingress qui cree des ELB.
-
-**Subnet public** (`10.10.1.0/24` = 254 IPs) :
-- **`map_public_ip_on_launch = true`** : chaque instance lancee dans ce subnet recoit automatiquement une IP publique. On fait ca car on n'a pas de NAT Gateway (trop cher).
-- **`availability_zone = eu-west-3a`** : une seule AZ (pas de HA multi-AZ, c'est un cluster de dev/learning).
-- **Tag `kubernetes.io/role/elb = "1"`** : dit a Kubernetes "ce subnet est eligible pour les Load Balancers publics".
-
-**Internet Gateway + Route Table** :
-- L'IGW est le "routeur" entre le VPC et Internet.
-- La route `0.0.0.0/0 -> IGW` envoie tout le trafic sortant vers Internet. Sans ca, les instances n'ont pas d'acces Internet meme avec une IP publique.
-
-### `security.tf` — Security Groups
-
-**Pourquoi 2 SGs separes ?**
-- `k8s_nodes` (kube-1, kube-2) : nodes internes, pas d'acces HTTP/HTTPS depuis Internet.
-- `public_nodes` (ingress, monitoring) : exposent des services (HTTP/HTTPS/Grafana/Prometheus).
-
-**SG `k8s_nodes`** — Regles d'entree :
-
-| Port | Proto | Source | Pourquoi |
+| App | Chart Helm | Namespace | Role |
 |---|---|---|---|
-| 22 | TCP | `my_ip_cidr` | SSH admin uniquement (pas ouvert au monde) |
-| 6443 | TCP | VPC + `my_ip_cidr` | API server Kubernetes. Le VPC en a besoin pour kubelet/kube-proxy. L'admin en a besoin pour kubectl/k9s depuis son poste |
-| 2379-2380 | TCP | self | etcd : communication client (2379) et peer (2380). `self` = uniquement les membres du meme SG |
-| 10250 | TCP | self | kubelet API : utilise par l'API server pour `kubectl exec`, `kubectl logs`, metrics |
-| 30000-32767 | TCP | 0.0.0.0/0 | NodePort range : services Kubernetes exposes via NodePort |
-| 8472 | UDP | self | VXLAN : trafic overlay Calico entre les nodes (encapsule les paquets pod-to-pod) |
-| all | all | VPC CIDR | Catch-all intra-VPC pour la communication cross-SG (k8s_nodes <-> public_nodes) |
-| all | all | Pod CIDR | Les pods ont des IPs dans `192.168.0.0/16`, il faut que ce trafic soit autorise |
+| ingress-nginx | `ingress-nginx` 4.15.0 | ingress-nginx | Reverse proxy, hostNetwork sur node ingress |
+| podinfo | `podinfo` 6.11.1 | podinfo | App de demo |
+| local-path-provisioner | `local-path-provisioner` 0.0.32 | local-path-storage | StorageClass pour PVC (hostPath) |
+| metrics-server | `metrics-server` 3.13.0 | kube-system | `kubectl top`, HPA |
+| kube-prometheus-stack | `kube-prometheus-stack` 82.10.5 | monitoring | Prometheus, Grafana, Alertmanager, node-exporter, kube-state-metrics |
+| loki | `loki` 6.55.0 | monitoring | Agregation de logs (SingleBinary) |
+| alloy | `alloy` 1.6.2 | monitoring | Collecte de logs (DaemonSet, successeur de Promtail) |
 
-**SG `public_nodes`** — Differences par rapport a `k8s_nodes` :
+**Acces web** (via ingress-nginx) :
 
-| Port | Proto | Source | Pourquoi |
-|---|---|---|---|
-| 80 | TCP | 0.0.0.0/0 | HTTP : trafic web vers l'ingress controller |
-| 443 | TCP | 0.0.0.0/0 | HTTPS : trafic web TLS |
-| 3000 | TCP | `my_ip_cidr` | Grafana : dashboard de monitoring, restreint a l'admin |
-| 9090 | TCP | `my_ip_cidr` | Prometheus : metriques, restreint a l'admin |
+| Path | Service |
+|---|---|
+| `/` | podinfo |
+| `/grafana` | Grafana (admin/admin) |
+| `/prometheus` | Prometheus UI |
 
-**Egress** : `0.0.0.0/0` en sortie sur les deux SGs (les nodes doivent telecharger des packages, des images Docker, etc.).
-
-### `instances.tf` — Les 4 EC2
-
-Chaque instance partage ces parametres :
-- **`ami = data.aws_ami.ubuntu.id`** : l'AMI Ubuntu trouvee dynamiquement.
-- **`key_name`** : la cle SSH uploadee (`~/.ssh/id_ed25519.pub` par defaut).
-- **`credit_specification { cpu_credits = "standard" }`** : les instances T3 fonctionnent en mode "burstable". `standard` = quand les credits CPU sont epuises, la perf est bridee (pas de surcharge de facturation contrairement a `unlimited`).
-- **`metadata_options { http_tokens = "required" }`** : force IMDSv2 (Instance Metadata Service v2). Securite : empeche les attaques SSRF de voler les credentials du role IAM via le metadata endpoint.
-- **`root_block_device`** : disque `gp3` (SSD general purpose, derniere generation). 20 GB pour tous sauf monitoring (30 GB pour stocker les metriques Prometheus).
-
-Differences par instance :
-- **kube-1** : `t3.medium` (4 GB RAM) car le control plane (etcd + API server + scheduler + controller-manager) consomme ~1.5 GB minimum. Aussi worker car avec 4 nodes on ne peut pas se permettre de "gaspiller" le CP.
-- **kube-2** : `t3.small` (2 GB) suffisant pour un worker simple.
-- **ingress** : `t3.small` (2 GB) dans le SG `public_nodes` car il recoit le trafic HTTP/HTTPS du monde.
-- **monitoring** : `t3.medium` (4 GB) car Prometheus est gourmand en RAM (stocke les series temporelles en memoire) + 30 GB de disque.
-
-### `ssm.tf` — SSM Parameter Store
-
-```hcl
-resource "aws_ssm_parameter" "kubeconfig" {
-  type  = "SecureString"
-  tier  = "Advanced"
-  value = "placeholder"
-  lifecycle { ignore_changes = [value] }
-}
-```
-
-- **`SecureString`** : le kubeconfig contient des certificats clients = acces admin au cluster. Stocke chiffre avec KMS.
-- **`tier = "Advanced"`** : le kubeconfig depasse 4 KB (limite du tier Standard) a cause des certificats base64.
-- **`value = "placeholder"`** : Terraform cree le parametre vide. C'est Ansible qui le remplira apres `kubeadm init`.
-- **`ignore_changes = [value]`** : critique ! Sans ca, chaque `terraform apply` reecrirait le kubeconfig avec "placeholder" et casserait l'acces au cluster.
-
-**IAM Policy `kubeconfig_read`** : politique read-only qu'on peut attacher aux devs pour qu'ils puissent `make kubeconfig` sans avoir acces a l'infra.
-
-### `outputs.tf` — Outputs + Inventory Ansible
-
-Les outputs exportent les IPs publiques/privees et les commandes SSH.
-
-**Generation automatique de l'inventory Ansible** (`local_file`) :
-```ini
-[control_plane]
-kube-1 ansible_host=<public_ip> private_ip=<private_ip> public_ip=<public_ip>
-
-[workers]
-kube-2     ansible_host=...
-ingress    ansible_host=...
-monitoring ansible_host=...
-
-[k8s_cluster:children]
-control_plane
-workers
-```
-
-- **`ansible_host`** : IP publique pour que Ansible se connecte en SSH depuis le poste local.
-- **`private_ip`** : utilisee par `kubeadm init --apiserver-advertise-address` (le control plane ecoute sur l'IP privee du VPC).
-- **`public_ip`** : utilisee pour `--apiserver-cert-extra-sans` et le kubeconfig (on accede au cluster depuis l'exterieur via l'IP publique).
-- **`[k8s_cluster:children]`** : groupe parent Ansible qui inclut control_plane + workers. Le role `common` s'execute sur ce groupe.
-
----
-
-## Ansible en detail
-
-### `ansible.cfg`
-
-```ini
-remote_user = ubuntu          # user par defaut des AMI Ubuntu
-private_key_file = ~/.ssh/id_ed25519
-host_key_checking = false     # skip la verification SSH (les IPs changent a chaque apply)
-```
-
-### Play 1 : Role `common` (tous les nodes)
-
-S'execute sur le groupe `k8s_cluster` (les 4 machines).
-
-**1. apt upgrade** : met a jour l'OS. Les AMI AWS ne sont pas toujours a jour.
-
-**2. Hostname** : `inventory_hostname` (kube-1, kube-2, ingress, monitoring). Important car kubeadm utilise le hostname comme nom de node dans le cluster.
-
-**3. Kernel modules** :
-- **`overlay`** : module de filesystem overlay. containerd en a besoin pour superposer les couches d'images Docker (chaque layer d'une image est un filesystem overlay).
-- **`br_netfilter`** : fait passer le trafic des bridges Linux par les regles iptables/netfilter. Sans ca, kube-proxy ne peut pas intercepter le trafic des Services (ClusterIP, NodePort).
-- Les modules sont charges immediatement (`modprobe`) ET persistes dans `/etc/modules-load.d/k8s.conf` pour survivre aux reboots.
-
-**4. Sysctl** :
-- **`net.bridge.bridge-nf-call-iptables = 1`** : active le filtrage iptables sur les bridges (necessite `br_netfilter`). kube-proxy cree des regles iptables pour router le trafic vers les bons pods derriere un Service.
-- **`net.bridge.bridge-nf-call-ip6tables = 1`** : idem pour IPv6.
-- **`net.ipv4.ip_forward = 1`** : transforme le node en routeur. Un pod sur kube-1 doit pouvoir communiquer avec un pod sur kube-2 : le noeud doit forwarder les paquets entre ses interfaces.
-
-**5. Swap off** :
-- `swapoff -a` : desactive immediatement.
-- Supprime l'entree swap de `/etc/fstab` : ne reviendra pas au reboot.
-- Pourquoi : kubelet refuse de demarrer avec swap active. Kubernetes gere la memoire via les requests/limits des pods. Le swap fausserait les garanties de QoS (un pod qui depasse sa limit memoire doit etre OOMKilled, pas swapped).
-
-**6. containerd** :
-- Installe containerd (le CRI = Container Runtime Interface).
-- Genere la config par defaut (`containerd config default`).
-- **`SystemdCgroup = true`** : aligne le driver de cgroups de containerd sur systemd. Par defaut, containerd utilise `cgroupfs`. Mais kubelet utilise `systemd`. Si les deux ne sont pas alignes, on a des conflits : les containers peuvent etre tues aleatoirement car les deux gestionnaires se battent pour les memes cgroups.
-
-**7. Kubernetes packages** :
-- Ajoute le repo officiel Kubernetes (`pkgs.k8s.io/core:/stable:/v1.32`) avec sa cle GPG.
-- Installe `kubeadm`, `kubelet`, `kubectl` en version 1.32.
-- **`dpkg_selections: hold`** : empeche `apt upgrade` de mettre a jour ces packages accidentellement. Les upgrades Kubernetes doivent etre controlees (kubeadm upgrade).
-
-### Play 2 : Role `control_plane` (kube-1 uniquement)
+## Quick Start
 
 ```bash
-kubeadm init \
-  --apiserver-advertise-address={{ private_ip }} \
-  --pod-network-cidr=192.168.0.0/16 \
-  --node-name={{ inventory_hostname }} \
-  --apiserver-cert-extra-sans={{ public_ip }}
+# Deployer l'infra + provisionner le cluster
+make all
+
+# Recuperer le kubeconfig
+make kubeconfig
+export KUBECONFIG=~/.kube/config:~/.kube/config-kubequest
+kubectl config use-context kubequest
 ```
-
-- **`--apiserver-advertise-address`** : l'IP privee sur laquelle l'API server ecoute. Utilise l'IP privee car les autres nodes communiquent via le VPC (pas via Internet).
-- **`--pod-network-cidr=192.168.0.0/16`** : le CIDR reserve aux pods. Calico utilise ce range par defaut. Chaque node recoit un sous-bloc `/26` (64 IPs) de ce range.
-- **`--node-name`** : force le nom du node (sinon c'est le hostname EC2 `ip-10-10-1-xxx` qui serait utilise).
-- **`--apiserver-cert-extra-sans`** : ajoute l'IP publique comme SAN (Subject Alternative Name) dans le certificat TLS de l'API server. Sans ca, `kubectl` depuis le poste local verrait une erreur de certificat (le cert ne couvrirait que l'IP privee).
-
-**Idempotence** : verifie si `/etc/kubernetes/admin.conf` existe deja avant d'init. Evite de planter si on relance le playbook.
-
-Apres l'init :
-- Copie `admin.conf` vers `~ubuntu/.kube/config` pour que l'user `ubuntu` puisse utiliser `kubectl`.
-- `kubeadm token create --print-join-command` : genere la commande de join et la stocke en Ansible fact pour le play suivant.
-
-### Play 3 : Role `worker` (kube-2, ingress, monitoring)
-
-```bash
-{{ hostvars[groups['control_plane'][0]].kubeadm_join_command }} --node-name={{ inventory_hostname }}
-```
-
-- Recupere la join command depuis les facts du control plane (stockee au play 2).
-- **`--node-name`** : force le hostname (meme raison que l'init).
-- **Idempotence** : verifie si `/etc/kubernetes/kubelet.conf` existe avant de join.
-
-Processus interne du join :
-1. Le worker contacte l'API server avec le bootstrap token.
-2. TLS Bootstrap : le kubelet genere un CSR, l'API server l'approuve automatiquement.
-3. Le node est enregistre dans l'API, le scheduler peut y placer des pods.
-
-### Play 4 : Role `calico` + Finalisation (kube-1)
-
-**Calico CNI** :
-1. Applique le manifest Tigera Operator (gestionnaire de Calico).
-2. Cree la custom resource `Installation` :
-   - **`blockSize: 26`** : chaque node recoit un `/26` (64 IPs pour les pods). Suffisant pour un petit cluster.
-   - **`cidr: 192.168.0.0/16`** : doit matcher le `--pod-network-cidr` du kubeadm init.
-   - **`encapsulation: VXLAN`** : encapsule **tout** le trafic pod-to-pod en VXLAN, meme entre nodes du meme subnet. Obligatoire sur AWS car les instances EC2 droppent les paquets dont l'IP source ne correspond pas a l'instance (source/dest check). Sans encapsulation, le trafic pod (`192.168.x.x`) est envoye en direct sur `ens5` et AWS le rejette. Voir [doc Calico VXLAN/IPIP](https://docs.tigera.io/calico/latest/networking/configuring/vxlan-ipip).
-   - **`natOutgoing: Enabled`** : les pods peuvent acceder a Internet (le trafic sortant est NATe avec l'IP du node).
-3. `kubectl wait --for=condition=Ready` : attend que tous les nodes soient Ready (Calico doit d'abord etre operationnel).
-
-**Labels des nodes** :
-- `kube-2` : `node-role.kubernetes.io/worker` (affichage dans `kubectl get nodes`).
-- `ingress` : `node-role.kubernetes.io/ingress` (permet des `nodeSelector` pour placer Nginx Ingress sur ce node).
-- `monitoring` : `node-role.kubernetes.io/monitoring` (permet des `nodeSelector` pour Prometheus/Grafana/Loki).
-
-### Play 5 : Role `helm` (kube-1)
-
-Installe Helm CLI sur le control plane. La version est pinee dans `group_vars/all.yml`.
-
-- Verifie si Helm est deja installe (`helm version --short`).
-- Si non : telecharge le script officiel `get-helm-3` et l'execute avec `DESIRED_VERSION={{ helm_version }}`.
-- Nettoie le script apres installation.
-
-### Play 6 : Role `argocd` (kube-1)
-
-Deploie ArgoCD via Helm chart. La version du chart est pinee dans `group_vars/all.yml`.
-
-1. Ajoute le repo Helm `argo` (`https://argoproj.github.io/argo-helm`).
-2. `helm repo update` pour recuperer les derniers index.
-3. Cree le namespace `argocd`.
-4. `helm upgrade --install argocd argo/argo-cd --version {{ argocd_chart_version }}` avec un fichier `values.yaml`.
-5. Attend que le deployment `argocd-server` soit disponible.
-6. Recupere et affiche le mot de passe admin initial.
-7. Bootstrap l'App of Apps : `kubectl apply -f root.yaml` (deploie automatiquement toutes les apps du dossier `apps/`).
-
-**Configuration (values.yaml)** :
-- **`global.tolerations`** + **`global.nodeSelector`** : tous les composants ArgoCD tournent sur le control plane (kube-1). La toleration autorise le scheduling malgre le taint `NoSchedule`, le nodeSelector force le placement.
-- **Service ClusterIP** (par defaut) : acces via `kubectl port-forward svc/argocd-server -n argocd 8080:443`.
-- **Resource requests/limits** : dimensionnes pour un petit cluster.
-
-**Gestion des versions** :
-
-Les versions sont centralisees dans `ansible/group_vars/all.yml` :
-```yaml
-helm_version: "v4.1.3"
-argocd_chart_version: "9.4.10"
-```
-
-Pour monter de version : modifier ce fichier et relancer `make cluster`.
-
-**Kubeconfig SSM** :
-1. `slurp` lit `/etc/kubernetes/admin.conf` depuis kube-1 (base64).
-2. Le template Jinja2 (`kubeconfig.yml.j2`) reconstruit un kubeconfig propre :
-   - Remplace l'IP privee par l'IP **publique** dans `server: https://{{ public_ip }}:6443`
-   - Cree un contexte nomme `kubequest` (plus clair que `kubernetes-admin@kubernetes`)
-   - Conserve les certificats (CA cert, client cert, client key)
-3. Push vers SSM Parameter Store (SecureString, chiffre KMS).
-4. Supprime le fichier temporaire `/tmp/kubeconfig-kubequest`.
-
----
 
 ## Makefile
 
 | Commande | Action |
 |---|---|
-| `make all` | `make infra` + `make cluster` |
-| `make infra` | `terraform apply` (cree l'infra + genere l'inventory Ansible) |
-| `make cluster` | `ansible-playbook playbook.yml` (provisionne le cluster) |
-| `make kubeconfig` | Fetch le kubeconfig depuis SSM vers `~/.kube/config-kubequest` |
-| `make argocd-password` | Affiche le mot de passe admin initial d'ArgoCD |
-| `make destroy` | `terraform destroy` (supprime toute l'infra) |
+| `make all` | Infra + cluster |
+| `make infra` | `terraform apply` |
+| `make cluster` | `ansible-playbook` |
+| `make kubeconfig` | Fetch kubeconfig depuis SSM |
+| `make argocd-password` | Mot de passe admin ArgoCD |
+| `make destroy` | `terraform destroy` |
 
----
-
-## GitOps — App of Apps (ArgoCD)
-
-Le cluster utilise le pattern **App of Apps** : une Application ArgoCD "root" surveille le dossier `apps/` du repo Git. Toute nouvelle Application pushee dans ce dossier est automatiquement deployee par ArgoCD.
-
-### Structure
+## Arborescence
 
 ```
-apps/
-  root.yaml                # App of Apps — surveille ce dossier (bootstrap auto via Ansible)
-  ingress-nginx.yaml       # Application CRD → chart Helm ingress-nginx
+KubeQuest/
+  Makefile
+  apps/                          # ArgoCD Applications (App of Apps)
+  terraform/                     # Infra AWS (VPC, EC2, SG, SSM)
+  ansible/
+    playbook.yml                 # 6 plays : common → control_plane → worker → calico → helm → argocd
+    roles/
+      common/                    # OS setup, containerd, kubeadm/kubelet/kubectl
+      control_plane/             # kubeadm init
+      worker/                    # kubeadm join
+      calico/                    # CNI Calico VXLAN + labels/taints + kubeconfig SSM
+      helm/                      # Helm CLI
+      argocd/                    # ArgoCD + bootstrap App of Apps
 ```
 
-### Flow GitOps
+## Choix techniques
 
-```
-git push (apps/nouvelle-app.yaml)
-    │
-    ▼
-ArgoCD (surveille le repo Git)
-    │  Detecte le nouveau fichier dans apps/
-    ▼
-ArgoCD cree l'Application
-    │  Telecharge le chart Helm + applique les values
-    ▼
-App deployee sur le cluster
-```
-
-### Ajouter une nouvelle app
-
-```bash
-# 1. Creer le fichier Application CRD dans apps/
-vim apps/podinfo.yaml
-
-# 2. Push
-git add apps/podinfo.yaml && git commit -m "Add podinfo" && git push
-
-# 3. ArgoCD detecte et deploie automatiquement — rien d'autre a faire
-```
-
-### Verification
-
-```bash
-# Applications ArgoCD (root + ingress-nginx en Synced/Healthy)
-kubectl get applications -n argocd
-
-# Pods ingress-nginx
-kubectl get pods -n ingress-nginx
-
-# IngressClass par defaut
-kubectl get ingressclass
-
-# Test ingress (404 = nginx fonctionne, pas de regle Ingress configuree)
-curl -I http://<IP-publique-ingress>
-```
-
-### Nginx Ingress Controller
-
-Deploye en **DaemonSet** sur le node `ingress` via `hostNetwork: true` (ports 80/443 directement sur l'IP publique du node). Configuration :
-- **nodeSelector** : `node-role.kubernetes.io/ingress: ""` — tourne uniquement sur le node ingress
-- **service disabled** : pas de Service LoadBalancer (on utilise hostNetwork)
-- **IngressClass `nginx`** : definie comme default
-- **admissionWebhooks** : valide les ressources Ingress avant application
-
----
-
-## Reseau en detail
-
-Le cluster a **3 plans reseau** superposes. Comprendre leur interaction est essentiel pour debugger.
-
-### Les 3 plans reseau
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Plan 3 — Services (virtuel)                                    │
-│  CIDR: 10.96.0.0/12                                            │
-│  Gere par: kube-proxy (regles iptables/IPVS)                   │
-│  Ex: ClusterIP 10.96.0.10 (kube-dns)                           │
-│  Les Services n'existent pas "physiquement" — ce sont des       │
-│  regles iptables qui redirigent vers les IPs des pods           │
-├─────────────────────────────────────────────────────────────────┤
-│  Plan 2 — Pods (overlay VXLAN)                                  │
-│  CIDR: 192.168.0.0/16 (chaque node recoit un /26)              │
-│  Gere par: Calico (interface vxlan.calico)                      │
-│  Ex: pod coredns 192.168.79.131 sur kube-2                     │
-│  Trafic encapsule en UDP:4789 entre les nodes                   │
-├─────────────────────────────────────────────────────────────────┤
-│  Plan 1 — Nodes (physique AWS)                                  │
-│  CIDR: 10.10.1.0/24 (subnet VPC)                               │
-│  Gere par: AWS VPC + Security Groups                            │
-│  Ex: kube-1 = 10.10.1.100, kube-2 = 10.10.1.194               │
-│  Interface: ens5 (ENI AWS)                                      │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Parcours d'un paquet pod-to-pod (cross-node)
-
-Exemple : un pod sur kube-1 (`192.168.235.1`) appelle CoreDNS sur kube-2 (`192.168.79.131`).
-
-```
-Pod (192.168.235.1) sur kube-1
-    │
-    │ 1. Le pod envoie un paquet DNS vers 10.96.0.10 (ClusterIP kube-dns)
-    │
-    ▼
-kube-proxy (iptables sur kube-1)
-    │
-    │ 2. iptables DNAT : remplace 10.96.0.10 → 192.168.79.131 (IP reelle du pod CoreDNS)
-    │
-    ▼
-Calico (routing table sur kube-1)
-    │
-    │ 3. ip route : 192.168.79.128/26 → via vxlan.calico
-    │    Calico encapsule le paquet original dans un paquet UDP:4789 (VXLAN)
-    │    Paquet externe : src=10.10.1.100 dst=10.10.1.194 proto=UDP port=4789
-    │    Paquet interne : src=192.168.235.1 dst=192.168.79.131 proto=UDP port=53
-    │
-    ▼
-ens5 (interface physique kube-1) → reseau AWS VPC → ens5 (kube-2)
-    │
-    │ 4. AWS voit un paquet UDP normal entre deux instances de son VPC
-    │    Les IPs source/dest (10.10.1.x) correspondent aux instances → OK
-    │
-    ▼
-vxlan.calico (interface VXLAN sur kube-2)
-    │
-    │ 5. Decapsule le paquet VXLAN → retrouve le paquet original
-    │    src=192.168.235.1 dst=192.168.79.131
-    │
-    ▼
-Pod CoreDNS (192.168.79.131) sur kube-2
-```
-
-### Pourquoi VXLAN et pas du routing direct sur AWS
-
-Sur un reseau classique (bare metal), Calico peut router directement les paquets pods sans encapsulation (`VXLANCrossSubnet` ou `None`). Sur AWS, ca ne marche pas :
-
-1. Un pod envoie un paquet avec `src=192.168.235.1` (IP pod, pas IP instance)
-2. Le noeud forward ce paquet sur `ens5` vers l'autre node
-3. AWS voit un paquet avec une IP source (`192.168.x.x`) qui ne correspond a aucune instance → **drop**
-
-C'est le **source/destination check** d'AWS : chaque ENI (interface reseau) ne peut envoyer/recevoir que des paquets dont l'IP source/dest correspond a l'IP de l'instance. C'est une protection anti-spoofing.
-
-**Solutions possibles :**
-- **VXLAN (notre choix)** : encapsule le trafic pod dans des paquets UDP entre les IPs des instances. AWS voit du trafic normal entre instances.
-- **Desactiver source/dest check** : `source_dest_check = false` sur chaque EC2. Permet le routing direct (plus performant) mais moins securise.
-- **IPIP** : meme principe que VXLAN mais utilise le protocole IP-in-IP (protocole 4). Probleme : les Security Groups AWS ne supportent que TCP/UDP/ICMP, donc IPIP est bloque.
-- **AWS VPC CNI** : le CNI natif d'EKS, attribue des IPs du VPC aux pods (pas d'overlay). Pas compatible avec kubeadm sans configuration avancee.
-
-Voir [doc Calico VXLAN/IPIP](https://docs.tigera.io/calico/latest/networking/configuring/vxlan-ipip).
-
-### VXLAN — fonctionnement
-
-VXLAN (Virtual Extensible LAN) cree un reseau overlay de couche 2 par-dessus un reseau de couche 3 :
-
-```
-┌──────────────────────────────────────────────────┐
-│ Paquet sur le fil (ce qu'AWS voit)                │
-├──────────────────────────────────────────────────┤
-│ Ethernet: src=MAC-kube1  dst=MAC-kube2           │
-│ IP:       src=10.10.1.100 dst=10.10.1.194        │
-│ UDP:      src=random      dst=4789               │
-│ ┌──────────────────────────────────────────────┐ │
-│ │ VXLAN header (8 bytes, VNI = identifiant)    │ │
-│ ├──────────────────────────────────────────────┤ │
-│ │ Ethernet interne (MAC virtuelle Calico)      │ │
-│ │ IP:   src=192.168.235.1 dst=192.168.79.131   │ │
-│ │ UDP:  src=random         dst=53 (DNS)        │ │
-│ │ Payload: requete DNS                         │ │
-│ └──────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────┘
-```
-
-- **VNI (VXLAN Network Identifier)** : identifie le reseau virtuel. Calico utilise un VNI par defaut pour tout le cluster.
-- **Port UDP 4789** : port standard VXLAN (Calico utilise 8472 par convention Linux, d'ou la regle dans le Security Group).
-- **Overhead** : ~50 bytes par paquet (headers Ethernet + IP + UDP + VXLAN). C'est pourquoi le MTU de `vxlan.calico` est reduit (`8951` au lieu de `9001` sur AWS).
-
-### Parcours d'une requete HTTP externe (Ingress)
-
-```
-Client (Internet)
-    │
-    │ 1. HTTP GET http://monapp.example.com
-    │    DNS → IP publique du node ingress
-    │
-    ▼
-AWS Internet Gateway → Security Group public_nodes (port 80 OK)
-    │
-    ▼
-Node ingress (ens5, IP publique)
-    │
-    │ 2. Nginx Ingress ecoute en hostNetwork sur le port 80
-    │    Matche la regle Ingress pour monapp.example.com
-    │    Forward vers le Service ClusterIP du backend
-    │
-    ▼
-kube-proxy (iptables sur le node ingress)
-    │
-    │ 3. DNAT : ClusterIP du service → IP du pod backend
-    │
-    ▼
-Calico VXLAN (si le pod est sur un autre node)
-    │
-    │ 4. Encapsule et envoie au bon node
-    │
-    ▼
-Pod backend (repond)
-```
-
-**Pourquoi `hostNetwork: true` ?** Le pod Nginx partage le network namespace du node. Il ecoute directement sur les ports 80/443 de l'IP publique du node, sans passer par un Service NodePort ou LoadBalancer (on n'a pas d'ELB AWS). C'est plus simple et plus performant (pas de double NAT).
-
-**Pourquoi `dnsPolicy: ClusterFirstWithHostNet` ?** Quand un pod est en `hostNetwork`, sa `dnsPolicy` par defaut est `Default` (= utilise le DNS du node, `/etc/resolv.conf` = `127.0.0.53` systemd-resolved). Mais Nginx Ingress a besoin de resoudre les Services Kubernetes (ex: `monapp.default.svc.cluster.local`). `ClusterFirstWithHostNet` force l'utilisation de CoreDNS (`10.96.0.10`) meme en hostNetwork.
-
-### Debug reseau — commandes utiles
-
-```bash
-# Verifier les interfaces reseau sur un node
-ip link show                          # ens5 (physique) + vxlan.calico (overlay) + cali* (veth pods)
-ip addr show vxlan.calico             # IP VTEP du node sur le reseau overlay
-
-# Routes Calico (comment le node sait ou envoyer les paquets pods)
-ip route | grep -E "192.168|vxlan"    # routes vers les blocs /26 des autres nodes
-
-# Verifier la connectivite pod-to-pod
-kubectl run test --rm -it --restart=Never --image=busybox -- ping -c3 <IP-pod-autre-node>
-
-# Verifier la resolution DNS depuis un pod
-kubectl run test --rm -it --restart=Never --image=busybox -- nslookup kubernetes.default.svc.cluster.local
-
-# Regles iptables kube-proxy pour un service
-sudo iptables -t nat -L KUBE-SERVICES | grep <nom-service>
-sudo iptables -t nat -L KUBE-SVC-XXXXX                      # voir les endpoints (pods) derriere le service
-
-# Verifier le trafic VXLAN en temps reel
-sudo tcpdump -i ens5 udp port 8472 -n                       # trafic VXLAN encapsule entre nodes
-
-# Etat Calico
-kubectl get ippools.crd.projectcalico.org -o yaml            # config des IP pools
-kubectl get felixconfiguration default -o yaml               # config du dataplane Calico
-calicoctl node status                                        # peering BGP (si utilise) ou VXLAN status
-```
-
----
+- **CNI Calico VXLAN** : encapsulation obligatoire sur AWS (source/dest check sur les ENI)
+- **kubeadm** (vs EKS) : approche educative, controle total sur le control plane
+- **ArgoCD App of Apps** : tout deploiement = un fichier YAML dans `apps/`, sync automatique
+- **Monitoring sur node dedie** : taint `NoSchedule` pour isoler les workloads monitoring (budget RAM 4 GB)
+- **Ingress path-based** : un seul point d'entree (port 80 du node ingress) pour toutes les apps
 
 ## CI/CD
 
-### GitHub Actions (`.github/workflows/lint.yml`)
+**GitHub Actions** : 4 jobs paralleles sur chaque push/PR — yamllint, terraform fmt+validate, ansible-lint, kubeconform.
 
-Pipeline de validation automatique sur chaque push/PR vers `main`. 4 jobs en parallele :
-
-| Job | Outil | Ce qu'il valide |
-|---|---|---|
-| **yaml-lint** | yamllint | Syntaxe et formatage de tous les YAML du repo |
-| **terraform** | `terraform fmt` + `validate` | Formatage HCL + validite de la configuration Terraform (sans credentials, `--backend=false`) |
-| **ansible-lint** | ansible-lint | Bonnes pratiques Ansible (idempotence, permissions, modules, etc.) |
-| **kubeconform** | kubeconform | Validite des CRDs ArgoCD dans `apps/` contre les schemas JSON (catch les typos avant qu'ArgoCD sync) |
-
-### Pre-commit (`.pre-commit-config.yaml`)
-
-Memes validations qu'en CI mais executees **localement avant chaque commit**. Empeche de push du code qui casserait la pipeline.
-
-```bash
-# Installation
-pip install pre-commit
-pre-commit install
-
-# Lancer manuellement sur tous les fichiers
-pre-commit run --all-files
-```
-
-Hooks inclus :
-- **trailing-whitespace** / **end-of-file-fixer** : nettoyage automatique
-- **check-yaml** : syntaxe YAML valide
-- **check-merge-conflict** : detecte les marqueurs de conflit oublies (`<<<<<<<`)
-- **detect-private-key** : empeche de commit des cles privees par accident
-- **yamllint** : lint YAML avec la config `.yamllint.yml`
-- **terraform_fmt** / **terraform_validate** : formatage + validation Terraform
-- **ansible-lint** : lint Ansible
-
----
+**Pre-commit** : memes checks en local avant chaque commit.
 
 ## Prerequis
 
 - Terraform >= 1.14
-- Ansible (pas de collections externes requises, tout utilise `ansible.builtin`)
-- AWS CLI configure avec un profil ayant les droits EC2/VPC/SSM/S3/IAM
-- Cle SSH `~/.ssh/id_ed25519` (ou modifier `ssh_public_key_path` dans les variables)
-- Bucket S3 `logs69` existant (pour le tfstate)
-
-## Commandes utiles
-
-```bash
-# Cluster
-kubectl get nodes -o wide
-kubectl get pods -A
-kubectl cluster-info
-
-# Debug
-kubectl describe node <name>
-kubectl logs -n kube-system <pod>
-journalctl -u kubelet -f            # sur le node, logs kubelet temps reel
-crictl ps                            # containers geres par containerd
-crictl logs <container-id>
-
-# ArgoCD
-kubectl get pods -n argocd
-make argocd-password
-kubectl port-forward svc/argocd-server -n argocd 8080:443  # UI sur https://localhost:8080
-
-# Certificats
-kubeadm certs check-expiration
-openssl x509 -in /etc/kubernetes/pki/apiserver.crt -noout -dates
-
-# Tokens
-kubeadm token list
-kubeadm token create --print-join-command
-
-# Static pods
-ls /etc/kubernetes/manifests/
-```
+- Ansible
+- AWS CLI configure (EC2, VPC, SSM, S3, IAM)
+- Cle SSH `~/.ssh/id_ed25519`
+- Bucket S3 `logs69` existant

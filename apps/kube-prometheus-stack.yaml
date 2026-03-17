@@ -1,0 +1,145 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: "82.10.5"
+    helm:
+      values: |
+        ## Prometheus Operator
+        prometheusOperator:
+          nodeSelector:
+            node-role.kubernetes.io/monitoring: ""
+          tolerations:
+            - key: node-role.kubernetes.io/monitoring
+              operator: Exists
+              effect: NoSchedule
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+        ## Prometheus
+        prometheus:
+          prometheusSpec:
+            nodeSelector:
+              node-role.kubernetes.io/monitoring: ""
+            tolerations:
+              - key: node-role.kubernetes.io/monitoring
+                operator: Exists
+                effect: NoSchedule
+            resources:
+              requests:
+                memory: 512Mi
+              limits:
+                memory: 1Gi
+            retention: 7d
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            externalUrl: /prometheus
+            routePrefix: /prometheus
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: local-path
+                  accessModes:
+                    - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: 10Gi
+          ingress:
+            enabled: true
+            ingressClassName: nginx
+            paths:
+              - /prometheus
+            pathType: Prefix
+
+        ## Grafana
+        grafana:
+          nodeSelector:
+            node-role.kubernetes.io/monitoring: ""
+          tolerations:
+            - key: node-role.kubernetes.io/monitoring
+              operator: Exists
+              effect: NoSchedule
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          adminPassword: admin
+          grafana.ini:
+            server:
+              root_url: "http://%(domain)s/grafana/"
+              serve_from_sub_path: true
+          additionalDataSources:
+            - name: Loki
+              type: loki
+              url: http://loki-gateway.monitoring.svc.cluster.local
+              access: proxy
+              isDefault: false
+          ingress:
+            enabled: true
+            ingressClassName: nginx
+            path: /grafana
+            pathType: Prefix
+
+        ## Alertmanager
+        alertmanager:
+          alertmanagerSpec:
+            nodeSelector:
+              node-role.kubernetes.io/monitoring: ""
+            tolerations:
+              - key: node-role.kubernetes.io/monitoring
+                operator: Exists
+                effect: NoSchedule
+            resources:
+              requests:
+                memory: 64Mi
+              limits:
+                memory: 128Mi
+
+        ## kube-state-metrics
+        kube-state-metrics:
+          nodeSelector:
+            node-role.kubernetes.io/monitoring: ""
+          tolerations:
+            - key: node-role.kubernetes.io/monitoring
+              operator: Exists
+              effect: NoSchedule
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+
+        ## node-exporter (DaemonSet on ALL nodes)
+        prometheus-node-exporter:
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+            - key: node-role.kubernetes.io/monitoring
+              operator: Exists
+              effect: NoSchedule
+          resources:
+            requests:
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

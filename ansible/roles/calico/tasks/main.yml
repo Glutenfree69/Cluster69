@@ -46,3 +46,10 @@
   delay: 10
   register: nodes_ready
   until: nodes_ready.rc == 0
+
+- name: Taint monitoring node
+  become: false
+  ansible.builtin.command: >
+    kubectl taint node monitoring
+    node-role.kubernetes.io/monitoring=:NoSchedule --overwrite
+  changed_when: false
