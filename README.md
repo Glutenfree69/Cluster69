@@ -70,7 +70,7 @@ Deploye automatiquement par ArgoCD via le dossier `apps/` (App of Apps pattern).
 | kube-prometheus-stack | `kube-prometheus-stack` 82.10.5 | monitoring | Prometheus, Grafana, Alertmanager, node-exporter, kube-state-metrics |
 | loki | `loki` 6.55.0 | monitoring | Agregation de logs (SingleBinary) |
 | alloy | `alloy` 1.6.2 | monitoring | Collecte de logs (DaemonSet, successeur de Promtail) |
-| k8sgpt | `k8sgpt-operator` 0.2.25 | k8sgpt-operator-system | Diagnostic IA du cluster via Amazon Bedrock (Claude Haiku 4.5) |
+| k8sgpt | `k8sgpt-operator` 0.2.25 | k8sgpt-operator-system | Diagnostic IA du cluster via Amazon Bedrock (Claude Sonnet 4) |
 
 **Acces web** (via ingress-nginx) :
 
@@ -115,13 +115,13 @@ spec:
     enabled: true
     secret:
       name: k8sgpt-bedrock-secret
-    model: anthropic.claude-haiku-4-5-20251001-v1:0
+    model: anthropic.claude-3-haiku-20240307-v1:0
     region: eu-west-3
     backend: amazonbedrock
     language: fr
   noCache: false
   repository: ghcr.io/k8sgpt-ai/k8sgpt
-  version: v0.4.30
+  version: v0.4.27
 EOF
 
 # 4. Verifier les resultats
@@ -176,7 +176,7 @@ KubeQuest/
 - **ArgoCD App of Apps** : tout deploiement = un fichier YAML dans `apps/`, sync automatique
 - **Monitoring sur node dedie** : taint `NoSchedule` pour isoler les workloads monitoring (budget RAM 4 GB)
 - **Ingress path-based** : un seul point d'entree (port 80 du node ingress) pour toutes les apps
-- **K8sGPT + Bedrock** : diagnostic IA du cluster, Claude Haiku 4.5 en pay-per-token (~$0.005/analyse)
+- **K8sGPT + Bedrock** : diagnostic IA du cluster, Claude Sonnet 4 en pay-per-token (~$0.02/analyse)
 
 ## CI/CD
 

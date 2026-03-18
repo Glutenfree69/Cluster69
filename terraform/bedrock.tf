@@ -25,7 +25,15 @@ resource "aws_iam_policy" "k8sgpt_bedrock" {
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream"
         ]
-        Resource = "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.*"
+        Resource = "arn:aws:bedrock:*::foundation-model/anthropic.*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "aws-marketplace:ViewSubscriptions",
+          "aws-marketplace:Subscribe"
+        ]
+        Resource = "*"
       }
     ]
   })
