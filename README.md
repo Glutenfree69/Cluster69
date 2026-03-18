@@ -70,6 +70,7 @@ Deploye automatiquement par ArgoCD via le dossier `apps/` (App of Apps pattern).
 | kube-prometheus-stack | `kube-prometheus-stack` 82.10.5 | monitoring | Prometheus, Grafana, Alertmanager, node-exporter, kube-state-metrics |
 | loki | `loki` 6.55.0 | monitoring | Agregation de logs (SingleBinary) |
 | alloy | `alloy` 1.6.2 | monitoring | Collecte de logs (DaemonSet, successeur de Promtail) |
+| k8sgpt | `k8sgpt-operator` 0.2.25 | k8sgpt-operator-system | Diagnostic IA du cluster via Amazon Bedrock (Claude Haiku 4.5) |
 
 **Acces web** (via ingress-nginx) :
 
@@ -78,6 +79,54 @@ Deploye automatiquement par ArgoCD via le dossier `apps/` (App of Apps pattern).
 | `/` | podinfo |
 | `/grafana` | Grafana (admin/admin) |
 | `/prometheus` | Prometheus UI |
+
+## K8sGPT (diagnostic IA)
+
+K8sGPT est un operator qui scanne le cluster en continu et diagnostique les problemes via un LLM (Claude Haiku 4.5 sur Amazon Bedrock).
+
+**Architecture** : l'ArgoCD app deploie l'operator, puis une CR (Custom Resource) `K8sGPT` configure le backend IA. Le secret AWS est cree manuellement (pas dans git).
+
+```
+ArgoCD (apps/k8sgpt.yaml) → Operator → watch CR K8sGPT → pod k8sgpt → Bedrock API
+```
+
+**Setup post-deploy** (apres `terraform apply` et sync ArgoCD) :
+
+```bash
+# 1. Recuperer les credentials IAM
+terraform -chdir=terraform output -raw k8sgpt_access_key_id
+terraform -chdir=terraform output -raw k8sgpt_secret_access_key
+
+# 2. Creer le secret K8s
+kubectl create secret generic k8sgpt-bedrock-secret \
+  --from-literal=AWS_ACCESS_KEY_ID="<ACCESS_KEY_ID>" \
+  --from-literal=AWS_SECRET_ACCESS_KEY="<SECRET_ACCESS_KEY>" \
+  -n k8sgpt-operator-system
+
+# 3. Appliquer la CR K8sGPT
+kubectl apply -f - <<'EOF'
+apiVersion: core.k8sgpt.ai/v1alpha1
+kind: K8sGPT
+metadata:
+  name: k8sgpt
+  namespace: k8sgpt-operator-system
+spec:
+  ai:
+    enabled: true
+    secret:
+      name: k8sgpt-bedrock-secret
+    model: anthropic.claude-haiku-4-5-20251001-v1:0
+    region: eu-west-3
+    backend: amazonbedrock
+    language: fr
+  noCache: false
+  repository: ghcr.io/k8sgpt-ai/k8sgpt
+  version: v0.4.30
+EOF
+
+# 4. Verifier les resultats
+kubectl get results -n k8sgpt-operator-system
+```
 
 ## Quick Start
 
@@ -127,6 +176,7 @@ KubeQuest/
 - **ArgoCD App of Apps** : tout deploiement = un fichier YAML dans `apps/`, sync automatique
 - **Monitoring sur node dedie** : taint `NoSchedule` pour isoler les workloads monitoring (budget RAM 4 GB)
 - **Ingress path-based** : un seul point d'entree (port 80 du node ingress) pour toutes les apps
+- **K8sGPT + Bedrock** : diagnostic IA du cluster, Claude Haiku 4.5 en pay-per-token (~$0.005/analyse)
 
 ## CI/CD
 

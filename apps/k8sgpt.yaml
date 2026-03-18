@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: k8sgpt
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.k8sgpt.ai/
+    chart: k8sgpt-operator
+    targetRevision: "0.2.25"
+    helm:
+      values: |
+        serviceMonitor:
+          enabled: true
+        grafanaDashboard:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: k8sgpt-operator-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
