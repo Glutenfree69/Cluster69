@@ -6,42 +6,42 @@ Cluster Kubernetes self-managed (kubeadm) sur AWS, provisionné from scratch ave
 
 ```mermaid
 flowchart TB
-    subgraph DEV["Poste local"]
-        TF["Terraform"]
-        AN["Ansible"]
-        KC["kubectl / k9s"]
+    subgraph DEV[\"Poste local\"]
+        TF[\"Terraform\"]
+        AN[\"Ansible\"]
+        KC[\"kubectl / k9s\"]
     end
 
-    subgraph AWS["AWS eu-west-3"]
-        subgraph VPC["VPC 10.10.0.0/16"]
-            subgraph SUBNET["Subnet public 10.10.1.0/24 — eu-west-3a"]
-                K1["<b>kube-1</b><br/>t3.medium · 4 GB<br/>Control Plane + Worker"]
-                K2["<b>kube-2</b><br/>t3.small · 2 GB<br/>Worker"]
-                IG["<b>ingress</b><br/>t3.small · 2 GB<br/>Ingress Controller"]
-                MO["<b>monitoring</b><br/>t3.medium · 4 GB<br/>Prometheus · Grafana · Loki · kagent"]
+    subgraph AWS[\"AWS eu-west-3\"]
+        subgraph VPC[\"VPC 10.10.0.0/16\"]
+            subgraph SUBNET[\"Subnet public 10.10.1.0/24 — eu-west-3a\"]
+                K1[\"<b>kube-1</b><br/>t3.medium · 4 GB<br/>Control Plane + Worker\"]
+                K2[\"<b>kube-2</b><br/>t3.small · 2 GB<br/>Worker\"]
+                IG[\"<b>ingress</b><br/>t3.small · 2 GB<br/>Ingress Controller\"]
+                MO[\"<b>monitoring</b><br/>t3.medium · 4 GB<br/>Prometheus · Grafana · Loki · kagent\"]
             end
-            IGW["Internet Gateway"]
+            IGW[\"Internet Gateway\"]
         end
-        SSM["SSM Parameter Store<br/>/kubequest/kubeconfig"]
-        S3["S3 — Terraform state"]
-        BED["Amazon Bedrock<br/>Claude Haiku 4.5"]
+        SSM[\"SSM Parameter Store<br/>/kubequest/kubeconfig\"]
+        S3[\"S3 — Terraform state\"]
+        BED[\"Amazon Bedrock<br/>Claude Haiku 4.5\"]
     end
 
-    TF -- "terraform apply" --> VPC
-    TF -- "tfstate" --> S3
-    TF -- "inventory" --> AN
-    AN -- "SSH" --> K1
-    AN -- "SSH" --> K2
-    AN -- "SSH" --> IG
-    AN -- "SSH" --> MO
-    AN -- "kubeconfig" --> SSM
-    KC -- "kubectl (6443)" --> K1
+    TF -- \"terraform apply\" --> VPC
+    TF -- \"tfstate\" --> S3
+    TF -- \"inventory\" --> AN
+    AN -- \"SSH\" --> K1
+    AN -- \"SSH\" --> K2
+    AN -- \"SSH\" --> IG
+    AN -- \"SSH\" --> MO
+    AN -- \"kubeconfig\" --> SSM
+    KC -- \"kubectl (6443)\" --> K1
 
-    K1 -- "kubeadm join" --> K2
-    K1 -- "kubeadm join" --> IG
-    K1 -- "kubeadm join" --> MO
+    K1 -- \"kubeadm join\" --> K2
+    K1 -- \"kubeadm join\" --> IG
+    K1 -- \"kubeadm join\" --> MO
 
-    MO -. "InvokeModel" .-> BED
+    MO -. \"InvokeModel\" .-> BED
 
     IGW --- SUBNET
 
@@ -132,11 +132,11 @@ terraform -chdir=terraform output -raw kagent_secret_access_key
 kubectl create namespace kagent
 
 kubectl create secret generic aws-credentials -n kagent \
-  --from-literal=AWS_ACCESS_KEY_ID="<ACCESS_KEY_ID>" \
-  --from-literal=AWS_SECRET_ACCESS_KEY="<SECRET_ACCESS_KEY>"
+  --from-literal=AWS_ACCESS_KEY_ID=\"<ACCESS_KEY_ID>\" \
+  --from-literal=AWS_SECRET_ACCESS_KEY=\"<SECRET_ACCESS_KEY>\"
 
 kubectl create secret generic github-token -n kagent \
-  --from-literal=GITHUB_TOKEN="<GITHUB_PAT>"
+  --from-literal=GITHUB_TOKEN=\"<GITHUB_PAT>\"
 
 # 3. Verifier le deploiement
 kubectl get pods -n kagent
@@ -214,3 +214,5 @@ KubeQuest/
 - AWS CLI configure (EC2, VPC, SSM, S3, IAM)
 - Cle SSH `~/.ssh/id_ed25519`
 - Bucket S3 `logs69` existant
+
+🚀
