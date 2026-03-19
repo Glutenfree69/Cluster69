@@ -11,5 +11,5 @@ spec:
     - name: Authorization
       valueFrom:
         type: Secret
-        valueRef: github-token
+        name: github-token
         key: GITHUB_TOKEN
