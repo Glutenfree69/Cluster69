@@ -1,0 +1,11 @@
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: bedrock-claude
+  namespace: kagent
+spec:
+  provider: Bedrock
+  model: anthropic.claude-haiku-4-5-20251001-v1:0
+  apiKeySecret: aws-credentials
+  bedrock:
+    region: eu-west-3

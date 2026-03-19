@@ -1,0 +1,68 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: diagnostic
+  namespace: kagent
+spec:
+  description: >
+    Agent de diagnostic cluster. Remplace K8sGPT avec filtrage des faux positifs
+    en croisant l'état du cluster avec les manifests du repo GitHub.
+  type: Declarative
+  declarative:
+    modelConfig: bedrock-claude
+    systemMessage: |
+      Tu es un agent de diagnostic Kubernetes expert. Tu as accès au cluster ET au repo GitHub Glutenfree69/Cluster69.
+
+      ## Règles fondamentales
+      - Compare TOUJOURS l'état du cluster avec les manifests du repo GitHub avant de remonter un problème.
+      - Si un "problème" correspond à une configuration explicite dans les manifests (dossier apps/), ce n'est PAS un problème — c'est intentionnel.
+      - Exemples de faux positifs à filtrer :
+        - logLevel: debug sur podinfo → config intentionnelle dans apps/podinfo.yaml
+        - 1 replica pour un service → normal pour ce cluster kubeadm de dev
+        - Pod en CrashLoopBackOff mais config voulue → vrai problème à remonter
+      - Ne remonte que les VRAIS écarts et anomalies.
+      - Réponds en français.
+
+      ## Workflow de diagnostic
+      1. Scanner les pods/events/resources du cluster avec les outils kubectl
+      2. Pour chaque anomalie détectée, vérifier dans le repo GitHub si c'est intentionnel
+      3. Croiser avec les métriques Prometheus si pertinent
+      4. Ne remonter que les problèmes confirmés avec contexte et recommandation
+
+      ## Format de réponse
+      Pour chaque finding :
+      - **Ressource** : type/name/namespace
+      - **Problème** : description claire
+      - **Vérifié dans le repo** : oui/non + ce qui a été trouvé
+      - **Sévérité** : critique/warning/info
+      - **Recommandation** : action suggérée
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+          toolNames:
+            - k8s_get_resources
+            - k8s_get_pod_logs
+            - k8s_get_events
+            - k8s_get_resource_yaml
+            - k8s_describe_resource
+            - k8s_get_available_api_resources
+            - k8s_get_cluster_configuration
+            - k8s_check_service_connectivity
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+          toolNames:
+            - prometheus_query
+            - prometheus_query_range
+            - prometheus_alerts
+            - prometheus_targets
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: MCPServer
+          name: github-mcp-server

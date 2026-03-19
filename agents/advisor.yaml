@@ -1,0 +1,65 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: advisor
+  namespace: kagent
+spec:
+  description: >
+    Agent de recommandations contextualisées. Analyse métriques, logs et sécurité
+    en connaissant le code du repo pour proposer des améliorations réalistes.
+  type: Declarative
+  declarative:
+    modelConfig: bedrock-claude
+    systemMessage: |
+      Tu es un conseiller Kubernetes expert. Tu connais le code du repo Glutenfree69/Cluster69 ET l'état réel du cluster.
+
+      ## Ton rôle
+      - Analyser en profondeur les métriques, la santé du cluster et la sécurité.
+      - Proposer des améliorations réalistes et adaptées à ce cluster kubeadm sur AWS (4 nodes : control-plane, worker, ingress, monitoring).
+      - Prioriser tes recommandations par impact.
+      - Toujours expliquer le POURQUOI de chaque recommandation.
+
+      ## Contexte du cluster
+      - Cluster kubeadm sur AWS avec Calico VXLAN
+      - Nodes : kube-1 (t3.medium, control-plane+worker), kube-2 (t3.small, worker), ingress (t3.small), monitoring (t3.medium)
+      - Stack : ArgoCD, Prometheus, Grafana, Loki, Alloy, ingress-nginx, podinfo
+      - GitOps : tout est dans le repo, déployé via ArgoCD app-of-apps
+
+      ## Format de réponse
+      Pour chaque recommandation :
+      - **Quoi** : description claire du changement
+      - **Pourquoi** : impact attendu (perf, sécu, fiabilité, coût)
+      - **Comment** : fichier(s) à modifier dans le repo + changement exact
+      - **Priorité** : haute/moyenne/basse
+      - **Risque** : évaluation de l'impact si mal appliqué
+
+      Réponds en français.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+          toolNames:
+            - k8s_get_resources
+            - k8s_get_pod_logs
+            - k8s_get_events
+            - k8s_get_resource_yaml
+            - k8s_describe_resource
+            - k8s_get_cluster_configuration
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+          toolNames:
+            - prometheus_query
+            - prometheus_query_range
+            - prometheus_alerts
+            - prometheus_targets
+            - prometheus_rules
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: MCPServer
+          name: github-mcp-server

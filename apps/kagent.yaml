@@ -1,0 +1,95 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kagent
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/kagent-dev/kagent/helm
+    chart: kagent
+    targetRevision: "0.7.23"
+    helm:
+      values: |
+        ## Controller
+        controller:
+          nodeSelector:
+            node-role.kubernetes.io/monitoring: ""
+          tolerations:
+            - key: node-role.kubernetes.io/monitoring
+              operator: Exists
+              effect: NoSchedule
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+        ## UI
+        ui:
+          nodeSelector:
+            node-role.kubernetes.io/monitoring: ""
+          tolerations:
+            - key: node-role.kubernetes.io/monitoring
+              operator: Exists
+              effect: NoSchedule
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+
+        ## Disable all built-in agents (we deploy custom ones via agents/)
+        agents:
+          argo-rollouts-agent:
+            enabled: false
+          cilium-debug-agent:
+            enabled: false
+          cilium-manager-agent:
+            enabled: false
+          cilium-policy-agent:
+            enabled: false
+          helm-agent:
+            enabled: false
+          istio-agent:
+            enabled: false
+          k8s-agent:
+            enabled: false
+          kgateway-agent:
+            enabled: false
+          observability-agent:
+            enabled: false
+          promql-agent:
+            enabled: false
+
+        ## Tools server (k8s, prometheus, helm tools)
+        kagent-tools:
+          enabled: true
+          nameOverride: "tools"
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+        ## Database
+        database:
+          type: sqlite
+          sqlite:
+            databaseName: kagent.db
+
+        ## No default LLM provider — configured via ModelConfig CRDs
+        tools:
+          grafana-mcp:
+            enabled: false
+          querydoc:
+            enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kagent
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

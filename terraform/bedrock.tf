@@ -1,20 +1,8 @@
-# --- IAM User for K8sGPT Bedrock access ---
+# --- IAM Policy for Bedrock access (shared) ---
 
-resource "aws_iam_user" "k8sgpt" {
-  name = "${var.project_name}-k8sgpt"
-
-  tags = {
-    Name = "${var.project_name}-k8sgpt"
-  }
-}
-
-resource "aws_iam_access_key" "k8sgpt" {
-  user = aws_iam_user.k8sgpt.name
-}
-
-resource "aws_iam_policy" "k8sgpt_bedrock" {
-  name        = "${var.project_name}-k8sgpt-bedrock"
-  description = "Allow K8sGPT to invoke models on Amazon Bedrock"
+resource "aws_iam_policy" "bedrock" {
+  name        = "${var.project_name}-bedrock"
+  description = "Allow AI agents to invoke models on Amazon Bedrock"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -39,22 +27,36 @@ resource "aws_iam_policy" "k8sgpt_bedrock" {
   })
 }
 
-resource "aws_iam_policy_attachment" "k8sgpt_bedrock" {
-  name       = "${var.project_name}-k8sgpt-bedrock"
-  users      = [aws_iam_user.k8sgpt.name]
-  policy_arn = aws_iam_policy.k8sgpt_bedrock.arn
+# --- IAM User for kagent Bedrock access ---
+
+resource "aws_iam_user" "kagent" {
+  name = "${var.project_name}-kagent"
+
+  tags = {
+    Name = "${var.project_name}-kagent"
+  }
 }
 
-# --- Outputs (retrieve with: terraform output -raw k8sgpt_secret_access_key) ---
+resource "aws_iam_access_key" "kagent" {
+  user = aws_iam_user.kagent.name
+}
 
-output "k8sgpt_access_key_id" {
-  description = "AWS Access Key ID for K8sGPT"
-  value       = aws_iam_access_key.k8sgpt.id
+resource "aws_iam_policy_attachment" "kagent_bedrock" {
+  name       = "${var.project_name}-kagent-bedrock"
+  users      = [aws_iam_user.kagent.name]
+  policy_arn = aws_iam_policy.bedrock.arn
+}
+
+# --- Outputs (retrieve with: terraform output -raw kagent_secret_access_key) ---
+
+output "kagent_access_key_id" {
+  description = "AWS Access Key ID for kagent"
+  value       = aws_iam_access_key.kagent.id
   sensitive   = true
 }
 
-output "k8sgpt_secret_access_key" {
-  description = "AWS Secret Access Key for K8sGPT"
-  value       = aws_iam_access_key.k8sgpt.secret
+output "kagent_secret_access_key" {
+  description = "AWS Secret Access Key for kagent"
+  value       = aws_iam_access_key.kagent.secret
   sensitive   = true
 }
