@@ -49,5 +49,5 @@ spec:
       - type: McpServer
         mcpServer:
           apiGroup: kagent.dev
-          kind: ToolServer
+          kind: RemoteMCPServer
           name: github-mcp-server

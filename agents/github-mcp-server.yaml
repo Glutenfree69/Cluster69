@@ -1,18 +1,15 @@
-apiVersion: kagent.dev/v1alpha1
-kind: ToolServer
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
 metadata:
   name: github-mcp-server
   namespace: kagent
 spec:
   description: "GitHub MCP Server — acces au repo Glutenfree69/Cluster69"
-  config:
-    stdio:
-      command: github-mcp-server
-      args:
-        - --toolsets=repos,pulls
-      envFrom:
-        - name: GITHUB_PERSONAL_ACCESS_TOKEN
-          valueFrom:
-            type: Secret
-            valueRef: github-token
-            key: GITHUB_TOKEN
+  protocol: STREAMABLE_HTTP
+  url: https://api.githubcopilot.com/mcp/
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        type: Secret
+        valueRef: github-token
+        key: GITHUB_TOKEN
