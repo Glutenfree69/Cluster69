@@ -66,3 +66,4 @@ spec:
           apiGroup: kagent.dev
           kind: RemoteMCPServer
           name: github-mcp-server
+          toolNames: []
