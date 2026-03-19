@@ -1,19 +1,18 @@
 apiVersion: kagent.dev/v1alpha1
-kind: MCPServer
+kind: ToolServer
 metadata:
   name: github-mcp-server
   namespace: kagent
 spec:
-  deployment:
-    image: ghcr.io/github/github-mcp-server:latest
-    port: 3000
-    cmd: github-mcp-server
-    args:
-      - --toolsets=repos,pulls
-    env:
-      GITHUB_PERSONAL_ACCESS_TOKEN:
-        secretRef:
-          name: github-token
-          key: GITHUB_TOKEN
-  transportType: stdio
-  stdioTransport: {}
+  description: "GitHub MCP Server — acces au repo Glutenfree69/Cluster69"
+  config:
+    stdio:
+      command: github-mcp-server
+      args:
+        - --toolsets=repos,pulls
+      envFrom:
+        - name: GITHUB_PERSONAL_ACCESS_TOKEN
+          valueFrom:
+            type: Secret
+            valueRef: github-token
+            key: GITHUB_TOKEN
