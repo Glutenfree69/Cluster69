@@ -13,7 +13,10 @@ resource "aws_iam_policy" "bedrock" {
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream"
         ]
-        Resource = "arn:aws:bedrock:*::foundation-model/anthropic.*"
+        Resource = [
+          "arn:aws:bedrock:*::foundation-model/anthropic.*",
+          "arn:aws:bedrock:*:*:inference-profile/eu.anthropic.*"
+        ]
       },
       {
         Effect = "Allow"

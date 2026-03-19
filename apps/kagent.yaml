@@ -35,9 +35,9 @@ spec:
               effect: NoSchedule
           resources:
             requests:
-              memory: 64Mi
-            limits:
               memory: 128Mi
+            limits:
+              memory: 512Mi
 
         ## Disable all built-in agents (we deploy custom ones via agents/)
         agents:
