@@ -11,10 +11,9 @@ spec:
     args:
       - --toolsets=repos,pulls
     env:
-      - name: GITHUB_PERSONAL_ACCESS_TOKEN
-        valueFrom:
-          secretKeyRef:
-            name: github-token
-            key: GITHUB_TOKEN
+      GITHUB_PERSONAL_ACCESS_TOKEN:
+        secretRef:
+          name: github-token
+          key: GITHUB_TOKEN
   transportType: stdio
   stdioTransport: {}

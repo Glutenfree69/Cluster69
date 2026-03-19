@@ -18,12 +18,13 @@ flowchart TB
                 K1["<b>kube-1</b><br/>t3.medium · 4 GB<br/>Control Plane + Worker"]
                 K2["<b>kube-2</b><br/>t3.small · 2 GB<br/>Worker"]
                 IG["<b>ingress</b><br/>t3.small · 2 GB<br/>Ingress Controller"]
-                MO["<b>monitoring</b><br/>t3.medium · 4 GB<br/>Prometheus · Grafana · Loki"]
+                MO["<b>monitoring</b><br/>t3.medium · 4 GB<br/>Prometheus · Grafana · Loki · kagent"]
             end
             IGW["Internet Gateway"]
         end
         SSM["SSM Parameter Store<br/>/kubequest/kubeconfig"]
         S3["S3 — Terraform state"]
+        BED["Amazon Bedrock<br/>Claude Haiku 4.5"]
     end
 
     TF -- "terraform apply" --> VPC
@@ -40,12 +41,15 @@ flowchart TB
     K1 -- "kubeadm join" --> IG
     K1 -- "kubeadm join" --> MO
 
+    MO -. "InvokeModel" .-> BED
+
     IGW --- SUBNET
 
     style K1 fill:#4a90d9,color:#fff
     style K2 fill:#7ab648,color:#fff
     style IG fill:#e6a023,color:#fff
     style MO fill:#d94a7a,color:#fff
+    style BED fill:#8b5cf6,color:#fff
 ```
 
 | Node | Role | Instance | RAM | Disque | SG |
@@ -53,7 +57,7 @@ flowchart TB
 | kube-1 | Control plane + worker | t3.medium | 4 GB | 20 GB | k8s_nodes |
 | kube-2 | Worker | t3.small | 2 GB | 20 GB | k8s_nodes |
 | ingress | Ingress controller (Nginx) | t3.small | 2 GB | 20 GB | public_nodes |
-| monitoring | Prometheus / Grafana / Loki | t3.medium | 4 GB | 30 GB | public_nodes |
+| monitoring | Prometheus / Grafana / Loki / kagent | t3.medium | 4 GB | 30 GB | public_nodes |
 
 **Cout estime : ~$97/mois**
 
@@ -70,7 +74,7 @@ Deploye automatiquement par ArgoCD via le dossier `apps/` (App of Apps pattern).
 | kube-prometheus-stack | `kube-prometheus-stack` 82.10.5 | monitoring | Prometheus, Grafana, Alertmanager, node-exporter, kube-state-metrics |
 | loki | `loki` 6.55.0 | monitoring | Agregation de logs (SingleBinary) |
 | alloy | `alloy` 1.6.2 | monitoring | Collecte de logs (DaemonSet, successeur de Promtail) |
-| k8sgpt | `k8sgpt-operator` 0.2.25 | k8sgpt-operator-system | Diagnostic IA du cluster via Amazon Bedrock (Claude Sonnet 4) |
+| kagent | `kagent` 0.7.23 | kagent | Agents IA autonomes (diagnostic, advisor, gitops-proposer) via Amazon Bedrock |
 
 **Acces web** (via ingress-nginx) :
 
@@ -80,53 +84,66 @@ Deploye automatiquement par ArgoCD via le dossier `apps/` (App of Apps pattern).
 | `/grafana` | Grafana (admin/admin) |
 | `/prometheus` | Prometheus UI |
 
-## K8sGPT (diagnostic IA)
+## kagent (agents IA autonomes)
 
-K8sGPT est un operator qui scanne le cluster en continu et diagnostique les problemes via un LLM (Claude Haiku 4.5 sur Amazon Bedrock).
-
-**Architecture** : l'ArgoCD app deploie l'operator, puis une CR (Custom Resource) `K8sGPT` configure le backend IA. Le secret AWS est cree manuellement (pas dans git).
+kagent remplace K8sGPT avec une approche multi-agents. Chaque agent a acces au **cluster** (etat reel via kubectl/prometheus) ET au **repo GitHub** (etat desire/code). Cette double visibilite elimine les faux positifs et permet des recommandations contextualisees.
 
 ```
-ArgoCD (apps/k8sgpt.yaml) → Operator → watch CR K8sGPT → pod k8sgpt → Bedrock API
+                    ┌─────────────────────┐
+                    │   Amazon Bedrock     │
+                    │  (Claude Haiku 4.5)  │
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │   kagent Controller  │
+                    │   (namespace: kagent)│
+                    │   node: monitoring   │
+                    └──────────┬──────────┘
+           ┌───────────────────┼───────────────────┐
+           │                   │                   │
+┌──────────▼────────┐ ┌───────▼────────┐ ┌────────▼─────────┐
+│  diagnostic       │ │ advisor        │ │ gitops-proposer  │
+│                   │ │                │ │                  │
+│ kubectl (ro)      │ │ kubectl (ro)   │ │ kubectl (ro)     │
+│ prometheus        │ │ prometheus     │ │ GitHub (rw)      │
+│ GitHub (ro)       │ │ GitHub (ro)    │ │                  │
+│                   │ │                │ │ Cree des PRs     │
+│ Scan cluster +    │ │ Recommandations│ │ sur le repo      │
+│ filtre faux pos.  │ │ contextualisees│ │                  │
+└───────────────────┘ └────────────────┘ └──────────────────┘
 ```
 
-**Setup post-deploy** (apres `terraform apply` et sync ArgoCD) :
+### 3 agents
+
+| Agent | Role | Outils |
+|---|---|---|
+| `diagnostic` | Scan la sante du cluster, filtre les faux positifs en croisant avec les manifests du repo | kubectl, prometheus, GitHub (lecture) |
+| `advisor` | Analyse metriques/logs/secu, propose des ameliorations adaptees au cluster | kubectl, prometheus, GitHub (lecture) |
+| `gitops-proposer` | Transforme les recommandations en PRs sur le repo GitHub | kubectl, GitHub (lecture + ecriture) |
+
+### Setup post-deploy
 
 ```bash
 # 1. Recuperer les credentials IAM
-terraform -chdir=terraform output -raw k8sgpt_access_key_id
-terraform -chdir=terraform output -raw k8sgpt_secret_access_key
+terraform -chdir=terraform output -raw kagent_access_key_id
+terraform -chdir=terraform output -raw kagent_secret_access_key
 
-# 2. Creer le secret K8s
-kubectl create secret generic k8sgpt-bedrock-secret \
+# 2. Creer les secrets K8s
+kubectl create namespace kagent
+
+kubectl create secret generic aws-credentials -n kagent \
   --from-literal=AWS_ACCESS_KEY_ID="<ACCESS_KEY_ID>" \
-  --from-literal=AWS_SECRET_ACCESS_KEY="<SECRET_ACCESS_KEY>" \
-  -n k8sgpt-operator-system
+  --from-literal=AWS_SECRET_ACCESS_KEY="<SECRET_ACCESS_KEY>"
 
-# 3. Appliquer la CR K8sGPT
-kubectl apply -f - <<'EOF'
-apiVersion: core.k8sgpt.ai/v1alpha1
-kind: K8sGPT
-metadata:
-  name: k8sgpt
-  namespace: k8sgpt-operator-system
-spec:
-  ai:
-    enabled: true
-    secret:
-      name: k8sgpt-bedrock-secret
-    model: anthropic.claude-3-haiku-20240307-v1:0
-    region: eu-west-3
-    backend: amazonbedrock
-    language: fr
-  noCache: false
-  repository: ghcr.io/k8sgpt-ai/k8sgpt
-  version: v0.4.27
-EOF
+kubectl create secret generic github-token -n kagent \
+  --from-literal=GITHUB_TOKEN="<GITHUB_PAT>"
 
-# 4. Verifier les resultats
-kubectl get results -n k8sgpt-operator-system
+# 3. Verifier le deploiement
+kubectl get pods -n kagent
+kubectl get agents -n kagent
 ```
+
+**GitHub PAT** : Fine-grained token sur `Glutenfree69/Cluster69` avec permissions : Contents (read/write) + Pull requests (read/write).
 
 ## Quick Start
 
@@ -157,7 +174,13 @@ kubectl config use-context kubequest
 KubeQuest/
   Makefile
   apps/                          # ArgoCD Applications (App of Apps)
-  terraform/                     # Infra AWS (VPC, EC2, SG, SSM)
+  agents/                        # Agent CRDs kagent (deployes via ArgoCD)
+    model-config.yaml            # ModelConfig Bedrock (Claude Haiku 4.5)
+    github-mcp-server.yaml       # MCPServer pour acces GitHub
+    diagnostic.yaml              # Agent : diagnostic cluster
+    advisor.yaml                 # Agent : recommandations
+    gitops-proposer.yaml         # Agent : PRs GitHub
+  terraform/                     # Infra AWS (VPC, EC2, SG, SSM, IAM Bedrock)
   ansible/
     playbook.yml                 # 6 plays : common → control_plane → worker → calico → helm → argocd
     roles/
@@ -176,7 +199,7 @@ KubeQuest/
 - **ArgoCD App of Apps** : tout deploiement = un fichier YAML dans `apps/`, sync automatique
 - **Monitoring sur node dedie** : taint `NoSchedule` pour isoler les workloads monitoring (budget RAM 4 GB)
 - **Ingress path-based** : un seul point d'entree (port 80 du node ingress) pour toutes les apps
-- **K8sGPT + Bedrock** : diagnostic IA du cluster, Claude Sonnet 4 en pay-per-token (~$0.02/analyse)
+- **kagent + Bedrock** : agents IA autonomes avec acces cluster + repo, Claude Haiku 4.5 en pay-per-token
 
 ## CI/CD
 
