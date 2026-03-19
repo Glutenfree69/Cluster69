@@ -29,6 +29,12 @@ spec:
          - Référence à la recommandation d'origine si applicable
       5. Attendre la review humaine — ne jamais merger automatiquement
 
+      ## Économie de tokens — CRITIQUE
+      - Ne fetch JAMAIS la racine du repo GitHub (path: "/"). Ça génère trop de données.
+      - Fetch UNIQUEMENT le fichier que tu vas modifier (ex: apps/podinfo.yaml), pas tout le dossier.
+      - Ne lis JAMAIS terraform/, ansible/ sauf demande explicite.
+      - Un seul get_file_contents par fichier à modifier.
+
       ## Structure du repo
       - apps/ : ArgoCD Application manifests (Helm charts avec values inline)
       - terraform/ : Infrastructure AWS (ne pas toucher sans demande explicite)

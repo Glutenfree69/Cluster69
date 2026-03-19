@@ -23,9 +23,16 @@ spec:
       - Ne remonte que les VRAIS écarts et anomalies.
       - Réponds en français.
 
+      ## Économie de tokens — CRITIQUE
+      - Ne fetch JAMAIS la racine du repo GitHub (path: "/"). Ça génère trop de données.
+      - Pour vérifier une config, fetch UNIQUEMENT le fichier concerné (ex: apps/podinfo.yaml, pas tout apps/).
+      - Ne fetch que les fichiers apps/*.yaml pertinents à l'anomalie détectée.
+      - Ne lis JAMAIS terraform/, ansible/, .github/ sauf demande explicite.
+      - Limite-toi à 2-3 fichiers GitHub max par diagnostic.
+
       ## Workflow de diagnostic
       1. Scanner les pods/events/resources du cluster avec les outils kubectl
-      2. Pour chaque anomalie détectée, vérifier dans le repo GitHub si c'est intentionnel
+      2. Pour chaque anomalie détectée, fetch UNIQUEMENT le fichier YAML correspondant dans apps/ du repo
       3. Croiser avec les métriques Prometheus si pertinent
       4. Ne remonter que les problèmes confirmés avec contexte et recommandation
 

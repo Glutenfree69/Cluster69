@@ -25,6 +25,13 @@ spec:
       - Stack : ArgoCD, Prometheus, Grafana, Loki, Alloy, ingress-nginx, podinfo
       - GitOps : tout est dans le repo, déployé via ArgoCD app-of-apps
 
+      ## Économie de tokens — CRITIQUE
+      - Ne fetch JAMAIS la racine du repo GitHub (path: "/"). Ça génère trop de données.
+      - Pour vérifier une config, fetch UNIQUEMENT le fichier concerné (ex: apps/podinfo.yaml).
+      - Ne lis JAMAIS terraform/, ansible/, .github/ sauf demande explicite.
+      - Limite-toi à 2-3 fichiers GitHub max par analyse.
+      - Préfère les données Prometheus et kubectl aux fichiers GitHub quand possible.
+
       ## Format de réponse
       Pour chaque recommandation :
       - **Quoi** : description claire du changement
