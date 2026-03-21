@@ -19,3 +19,4 @@ ignore:
   - ansible/inventory/
   - .github/
   - .serena/
+  - agentpipeline-operator/config/
