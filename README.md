@@ -1,4 +1,4 @@
-# KubeQuest
+# Cluster69
 
 Cluster Kubernetes self-managed (kubeadm) sur AWS, provisionné from scratch avec Terraform + Ansible. GitOps via ArgoCD (App of Apps).
 
@@ -22,7 +22,7 @@ flowchart TB
             end
             IGW[\"Internet Gateway\"]
         end
-        SSM[\"SSM Parameter Store<br/>/kubequest/kubeconfig\"]
+        SSM[\"SSM Parameter Store<br/>/cluster69/kubeconfig\"]
         S3[\"S3 — Terraform state\"]
         BED[\"Amazon Bedrock<br/>Claude Haiku 4.5\"]
     end
@@ -153,8 +153,8 @@ make all
 
 # Recuperer le kubeconfig
 make kubeconfig
-export KUBECONFIG=~/.kube/config:~/.kube/config-kubequest
-kubectl config use-context kubequest
+export KUBECONFIG=~/.kube/config:~/.kube/config-cluster69
+kubectl config use-context cluster69
 ```
 
 ## Makefile
@@ -171,7 +171,7 @@ kubectl config use-context kubequest
 ## Arborescence
 
 ```
-KubeQuest/
+Cluster69/
   Makefile
   apps/                          # ArgoCD Applications (App of Apps)
   agents/                        # Agent CRDs kagent (deployes via ArgoCD)

@@ -2,7 +2,7 @@
 
 resource "aws_ssm_parameter" "kubeconfig" {
   name        = "/${var.project_name}/kubeconfig"
-  description = "Kubeconfig for the KubeQuest cluster (updated by Ansible after cluster provisioning)"
+  description = "Kubeconfig for the Cluster69 cluster (updated by Ansible after cluster provisioning)"
   type        = "SecureString"
   tier        = "Advanced"
   value       = "placeholder"
@@ -20,7 +20,7 @@ resource "aws_ssm_parameter" "kubeconfig" {
 
 resource "aws_iam_policy" "kubeconfig_read" {
   name        = "${var.project_name}-kubeconfig-read"
-  description = "Allow reading the KubeQuest kubeconfig from SSM Parameter Store"
+  description = "Allow reading the Cluster69 kubeconfig from SSM Parameter Store"
 
   policy = jsonencode({
     Version = "2012-10-17"

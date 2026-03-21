@@ -63,12 +63,12 @@
       ansible.builtin.set_fact:
         admin_conf: "{{ admin_conf_raw.content | b64decode | from_yaml }}"
 
-    - name: Generate kubeconfig with kubequest context
+    - name: Generate kubeconfig with cluster69 context
       become: false
       delegate_to: localhost
       ansible.builtin.template:
         src: templates/kubeconfig.yml.j2
-        dest: /tmp/kubeconfig-kubequest
+        dest: /tmp/kubeconfig-cluster69
         mode: "0600"
 
     - name: Push kubeconfig to SSM Parameter Store
@@ -76,9 +76,9 @@
       delegate_to: localhost
       ansible.builtin.shell: >
         aws ssm put-parameter
-        --name "/kubequest/kubeconfig"
+        --name "/cluster69/kubeconfig"
         --type SecureString
-        --value "$(cat /tmp/kubeconfig-kubequest)"
+        --value "$(cat /tmp/kubeconfig-cluster69)"
         --overwrite
         --tier Advanced
         --region {{ lookup('env', 'AWS_REGION') | default('eu-west-3', true) }}
@@ -88,7 +88,7 @@
       become: false
       delegate_to: localhost
       ansible.builtin.file:
-        path: /tmp/kubeconfig-kubequest
+        path: /tmp/kubeconfig-cluster69
         state: absent
 
     - name: Display access instructions

@@ -10,7 +10,7 @@ terraform {
 
   backend "s3" {
     bucket = "logs69"
-    key    = "kubequest/terraform.tfstate"
+    key    = "cluster69/terraform.tfstate"
     region = "eu-west-3"
   }
 }

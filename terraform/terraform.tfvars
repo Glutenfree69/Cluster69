@@ -1,5 +1,5 @@
 # ============================================================
-# KubeQuest - Terraform Variables
+# Cluster69 - Terraform Variables
 # ============================================================
 # Copy this file to terraform.tfvars and fill in your values:
 #   cp terraform.tfvars.example terraform.tfvars

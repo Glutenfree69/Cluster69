@@ -8,7 +8,7 @@ set -euo pipefail
 BASE_URL="${1:-http://15.237.119.243/}"
 ROUNDS="${2:-5}"
 
-echo "=== KubeQuest Demo Traffic Generator ==="
+echo "=== Cluster69 Demo Traffic Generator ==="
 echo "Target : ${BASE_URL}"
 echo "Rounds : ${ROUNDS}"
 echo ""

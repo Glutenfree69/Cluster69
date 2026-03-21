@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "project_name" {
   description = "Project name used for tagging and naming"
   type        = string
-  default     = "kubequest"
+  default     = "cluster69"
 }
 
 variable "vpc_cidr" {

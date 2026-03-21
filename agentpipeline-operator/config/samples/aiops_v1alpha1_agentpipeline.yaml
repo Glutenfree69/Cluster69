@@ -1,0 +1,57 @@
+apiVersion: aiops.cluster69.io/v1alpha1
+kind: AgentPipeline
+metadata:
+  labels:
+    app.kubernetes.io/name: agentpipeline-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: incident-response
+  namespace: kagent
+spec:
+  trigger:
+    type: manual
+  retryPolicy:
+    maxRetries: 1
+    backoff: 30s
+  stages:
+    - name: diagnose
+      agentRef:
+        name: diagnostic
+        namespace: kagent
+      timeout: 5m
+      prompt: |
+        Effectue un diagnostic complet du cluster.
+        Identifie tous les problemes actifs (OOMKill, CrashLoopBackOff, etc.).
+        Croise avec les manifests du repo GitHub pour filtrer les faux positifs.
+
+    - name: advise
+      agentRef:
+        name: advisor
+        namespace: kagent
+      timeout: 5m
+      dependsOn:
+        - diagnose
+      prompt: |
+        Voici le rapport de diagnostic du cluster:
+
+        {{.PreviousOutput}}
+
+        Propose des recommandations priorisees pour corriger ces problemes.
+        Pour chaque recommandation, indique le fichier a modifier et le changement exact.
+
+    - name: propose-fix
+      agentRef:
+        name: gitops-proposer
+        namespace: kagent
+      timeout: 5m
+      dependsOn:
+        - advise
+      config:
+        autoMerge: "false"
+        targetRepo: Glutenfree69/Cluster69
+      prompt: |
+        Voici les recommandations a implementer:
+
+        {{.PreviousOutput}}
+
+        Cree une PR sur le repo pour la recommandation la plus prioritaire.
+        La PR doit avoir un titre clair et une description detaillee.

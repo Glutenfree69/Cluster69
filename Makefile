@@ -1,6 +1,6 @@
 AWS_REGION ?= eu-west-3
-KUBECONFIG_PATH = $(HOME)/.kube/config-kubequest
-SSM_PARAM = /kubequest/kubeconfig
+KUBECONFIG_PATH = $(HOME)/.kube/config-cluster69
+SSM_PARAM = /cluster69/kubeconfig
 
 .PHONY: infra cluster kubeconfig all destroy
 
@@ -12,7 +12,7 @@ infra: ## Deploy AWS infrastructure (generates Ansible inventory)
 cluster: ## Provision Kubernetes cluster via Ansible
 	cd ansible && ansible-playbook playbook.yml
 
-kubeconfig: ## Fetch kubeconfig from SSM to ~/.kube/config-kubequest
+kubeconfig: ## Fetch kubeconfig from SSM to ~/.kube/config-cluster69
 	@mkdir -p $(HOME)/.kube
 	@aws ssm get-parameter \
 		--name "$(SSM_PARAM)" \
@@ -26,7 +26,7 @@ kubeconfig: ## Fetch kubeconfig from SSM to ~/.kube/config-kubequest
 	@echo ""
 	@echo "To use it:"
 	@echo "  export KUBECONFIG=~/.kube/config:$(KUBECONFIG_PATH)"
-	@echo "  kubectl config use-context kubequest"
+	@echo "  kubectl config use-context cluster69"
 
 argocd-password: ## Get ArgoCD admin password
 	@kubectl --kubeconfig $(KUBECONFIG_PATH) get secret argocd-initial-admin-secret \

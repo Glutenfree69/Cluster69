@@ -1,4 +1,4 @@
-# KubeQuest - Project Overview
+# Cluster69 - Project Overview
 
 ## Purpose
 Cluster Kubernetes self-managed (kubeadm) sur AWS. Workflow GitOps complet avec ArgoCD App of Apps. Provisioning full automatisé via `make all` (Terraform + Ansible).
