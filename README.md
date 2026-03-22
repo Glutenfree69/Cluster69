@@ -136,14 +136,15 @@ kubectl create secret generic aws-credentials -n kagent \
   --from-literal=AWS_SECRET_ACCESS_KEY=\"<SECRET_ACCESS_KEY>\"
 
 kubectl create secret generic github-token -n kagent \
-  --from-literal=GITHUB_TOKEN=\"<GITHUB_PAT>\"
+  --from-literal=GITHUB_TOKEN="Bearer <GITHUB_PAT>" \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 # 3. Verifier le deploiement
 kubectl get pods -n kagent
 kubectl get agents -n kagent
 ```
 
-**GitHub PAT** : Fine-grained token sur `Glutenfree69/Cluster69` avec permissions : Contents (read/write) + Pull requests (read/write).
+**GitHub PAT** : Token classique avec permissions `repo` + `copilot`. Le prefixe `Bearer ` dans le secret est requis par le MCP server GitHub Copilot (`api.githubcopilot.com/mcp/`).
 
 ## Quick Start
 
