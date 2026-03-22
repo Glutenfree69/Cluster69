@@ -54,13 +54,13 @@ spec:
           istio-agent:
             enabled: false
           k8s-agent:
-            enabled: false
+            enabled: true
           kgateway-agent:
             enabled: false
           observability-agent:
-            enabled: false
+            enabled: true
           promql-agent:
-            enabled: false
+            enabled: true
 
         ## Tools server (k8s, prometheus, helm tools)
         kagent-tools:
@@ -78,8 +78,6 @@ spec:
               - prometheus
             metrics:
               port: 8085
-            prometheus:
-              url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/prometheus"
 
         ## Database
         database:
