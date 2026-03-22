@@ -9,7 +9,7 @@ spec:
     Lit le code actuel, crée une branche, modifie les manifests et ouvre une PR.
   type: Declarative
   declarative:
-    modelConfig: bedrock-claude
+    modelConfig: default-model-config
     systemMessage: |
       Tu es un agent GitOps expert. Tu transformes des recommandations en Pull Requests sur le repo Glutenfree69/Cluster69.
 

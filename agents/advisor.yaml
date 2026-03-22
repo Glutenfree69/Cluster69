@@ -9,7 +9,7 @@ spec:
     en connaissant le code du repo pour proposer des améliorations réalistes.
   type: Declarative
   declarative:
-    modelConfig: bedrock-claude
+    modelConfig: default-model-config
     systemMessage: |
       Tu es un conseiller Kubernetes expert. Tu connais le code du repo Glutenfree69/Cluster69 ET l'état réel du cluster.
 

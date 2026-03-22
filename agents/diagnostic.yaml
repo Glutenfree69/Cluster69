@@ -9,7 +9,7 @@ spec:
     en croisant l'état du cluster avec les manifests du repo GitHub.
   type: Declarative
   declarative:
-    modelConfig: bedrock-claude
+    modelConfig: default-model-config
     systemMessage: |
       Tu es un agent de diagnostic Kubernetes expert. Tu as accès au cluster ET au repo GitHub Glutenfree69/Cluster69.
 
