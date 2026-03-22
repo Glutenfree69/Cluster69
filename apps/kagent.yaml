@@ -66,15 +66,18 @@ spec:
         kagent-tools:
           enabled: true
           nameOverride: "tools"
-          enabledTools:
-            - k8s
-            - prometheus
           resources:
             requests:
               memory: 128Mi
             limits:
               memory: 256Mi
           tools:
+            loglevel: "debug"
+            enabledTools:
+              - k8s
+              - prometheus
+            metrics:
+              port: 8085
             prometheus:
               url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/prometheus"
 
