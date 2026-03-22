@@ -86,17 +86,20 @@ spec:
             databaseName: kagent.db
 
         ## Default LLM provider — Bedrock for all agents
-        provider: bedrock
-        bedrock:
-          model: eu.anthropic.claude-haiku-4-5-20251001-v1:0
-          apiKeySecret: aws-credentials
-          region: eu-west-3
+        providers:
+          default: bedrock
+          bedrock:
+            provider: Bedrock
+            model: eu.anthropic.claude-haiku-4-5-20251001-v1:0
+            apiKeySecretRef: aws-credentials
+            config:
+              region: eu-west-3
 
         tools:
           grafana-mcp:
-            enabled: false
+            enabled: true
           querydoc:
-            enabled: false
+            enabled: true
   destination:
     server: https://kubernetes.default.svc
     namespace: kagent
