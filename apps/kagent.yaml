@@ -66,6 +66,9 @@ spec:
         kagent-tools:
           enabled: true
           nameOverride: "tools"
+          enabledTools:
+            - k8s
+            - prometheus
           resources:
             requests:
               memory: 128Mi
