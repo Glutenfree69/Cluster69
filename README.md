@@ -132,8 +132,8 @@ terraform -chdir=terraform output -raw kagent_secret_access_key
 kubectl create namespace kagent
 
 kubectl create secret generic aws-credentials -n kagent \
-  --from-literal=AWS_ACCESS_KEY_ID=\"<ACCESS_KEY_ID>\" \
-  --from-literal=AWS_SECRET_ACCESS_KEY=\"<SECRET_ACCESS_KEY>\"
+  --from-literal=AWS_ACCESS_KEY_ID=$(terraform -chdir=terraform output -raw kagent_access_key_id) \
+  --from-literal=AWS_SECRET_ACCESS_KEY=$(terraform -chdir=terraform output -raw kagent_secret_access_key)
 
 kubectl create secret generic github-token -n kagent \
   --from-literal=GITHUB_TOKEN="Bearer <GITHUB_PAT>" \
