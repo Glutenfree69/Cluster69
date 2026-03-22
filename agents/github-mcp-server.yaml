@@ -6,7 +6,7 @@ metadata:
 spec:
   description: "GitHub MCP Server — acces au repo Glutenfree69/Cluster69"
   protocol: STREAMABLE_HTTP
-  url: https://api.github.com/mcp
+  url: https://api.githubcopilot.com/mcp/
   headersFrom:
     - name: Authorization
       valueFrom:
