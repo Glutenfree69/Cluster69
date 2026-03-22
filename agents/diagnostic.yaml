@@ -64,10 +64,11 @@ spec:
           kind: RemoteMCPServer
           name: kagent-tool-server
           toolNames:
-            - prometheus_query
-            - prometheus_query_range
-            - prometheus_alerts
-            - prometheus_targets
+            - prometheus_query_tool
+            - prometheus_query_range_tool
+            - prometheus_targets_tool
+            - prometheus_label_names_tool
+            - prometheus_promql_tool
       - type: McpServer
         mcpServer:
           apiGroup: kagent.dev
