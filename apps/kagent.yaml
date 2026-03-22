@@ -85,7 +85,13 @@ spec:
           sqlite:
             databaseName: kagent.db
 
-        ## No default LLM provider — configured via ModelConfig CRDs
+        ## Default LLM provider — Bedrock for all agents
+        provider: bedrock
+        bedrock:
+          model: eu.anthropic.claude-haiku-4-5-20251001-v1:0
+          apiKeySecret: aws-credentials
+          region: eu-west-3
+
         tools:
           grafana-mcp:
             enabled: false
