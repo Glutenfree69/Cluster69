@@ -54,13 +54,13 @@ spec:
           istio-agent:
             enabled: false
           k8s-agent:
-            enabled: true
+            enabled: false
           kgateway-agent:
             enabled: false
           observability-agent:
-            enabled: true
+            enabled: false
           promql-agent:
-            enabled: true
+            enabled: false
 
         ## Tools server (k8s, prometheus, helm tools)
         kagent-tools:

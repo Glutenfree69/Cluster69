@@ -121,6 +121,30 @@ kagent remplace K8sGPT avec une approche multi-agents. Chaque agent a acces au *
 | `advisor` | Analyse metriques/logs/secu, propose des ameliorations adaptees au cluster | kubectl, prometheus, GitHub (lecture) |
 | `gitops-proposer` | Transforme les recommandations en PRs sur le repo GitHub | kubectl, GitHub (lecture + ecriture) |
 
+### Monitoring tools (Grafana MCP)
+
+Les agents accedent a Prometheus et Loki **via Grafana** (MCP server `grafana-mcp`), pas directement. Le flux est :
+
+```
+Agent → kagent-grafana-mcp → Grafana API → Datasources (Prometheus, Loki)
+```
+
+Cela concerne les outils : `query_prometheus`, `list_prometheus_metric_names`, `query_loki_logs`, `list_loki_label_names`, `search_dashboards`, etc.
+
+**Configuration requise** (`apps/kagent.yaml`) :
+
+```yaml
+grafana-mcp:
+  grafana:
+    url: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local:80"
+```
+
+> L'URL par defaut du chart kagent (`grafana.kagent:3000/api`) est incorrecte — Grafana est dans le namespace `monitoring`, pas `kagent`, et le MCP server ajoute `/api` lui-meme.
+
+**Auth** : Grafana est configure en acces anonyme (Viewer) pour eviter de gerer des tokens. Configurable dans `apps/kube-prometheus-stack.yaml` sous `grafana.ini.auth.anonymous`.
+
+Les outils `k8s_*` et `prometheus_*` de `kagent-tool-server` sont independants et ne passent pas par Grafana.
+
 ### Setup post-deploy
 
 ```bash

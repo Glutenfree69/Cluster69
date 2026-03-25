@@ -48,10 +48,13 @@ spec:
           apiGroup: kagent.dev
           kind: RemoteMCPServer
           name: kagent-tool-server
-          toolNames:
-            - k8s_get_resources
-            - k8s_get_resource_yaml
-            - k8s_describe_resource
+          toolNames: []
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: kagent-grafana-mcp
+          toolNames: []
       - type: McpServer
         mcpServer:
           apiGroup: kagent.dev
