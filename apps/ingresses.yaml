@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ingresses
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Glutenfree69/Cluster69
+    targetRevision: main
+    path: ingresses
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kagent
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
