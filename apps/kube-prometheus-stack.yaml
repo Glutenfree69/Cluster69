@@ -78,6 +78,10 @@ spec:
             server:
               root_url: "http://%(domain)s/grafana/"
               serve_from_sub_path: true
+            auth.anonymous:
+              enabled: true
+              org_name: Main Org.
+              org_role: Viewer
           dashboardProviders:
             dashboardproviders.yaml:
               apiVersion: 1
