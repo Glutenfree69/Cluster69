@@ -95,6 +95,12 @@ spec:
             config:
               region: eu-west-3
 
+        ## Grafana MCP server — override default URL (grafana.kagent:3000)
+        grafana-mcp:
+          grafana:
+            url: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local:80/api"
+            serviceAccountToken: ""
+
         tools:
           grafana-mcp:
             enabled: true
