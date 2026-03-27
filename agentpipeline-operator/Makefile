@@ -14,6 +14,10 @@ endif
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= podman
 
+# Kubeconfig for cluster69
+export KUBECONFIG := $(HOME)/.kube/config:$(HOME)/.kube/config-cluster69
+KUBECTL_CONTEXT ?= cluster69
+
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
@@ -38,6 +42,11 @@ all: build
 .PHONY: help
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@printf "\n\033[1mConfig\033[0m\n"
+	@printf "  \033[36mCONTAINER_TOOL\033[0m  Container runtime (default: podman)\n"
+	@printf "  \033[36mIMG\033[0m             Image URL (default: controller:latest)\n"
+	@printf "  \033[36mKUBECTL_CONTEXT\033[0m Kubernetes context (default: cluster69)\n"
+	@printf "  \033[36mKUBECONFIG\033[0m      Auto-set to ~/.kube/config:~/.kube/config-cluster69\n"
 
 ##@ Development
 
@@ -179,7 +188,7 @@ $(LOCALBIN):
 	mkdir -p "$(LOCALBIN)"
 
 ## Tool Binaries
-KUBECTL ?= kubectl
+KUBECTL ?= kubectl --context $(KUBECTL_CONTEXT)
 KIND ?= kind
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
