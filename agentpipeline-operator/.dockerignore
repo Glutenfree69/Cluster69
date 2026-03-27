@@ -1,5 +1,5 @@
 # Exclude non-essential files from build context
-bin/
+# NOTE: bin/ is NOT excluded — the Dockerfile copies the pre-built binary from bin/manager
 cover.out
 dist/
 hack/

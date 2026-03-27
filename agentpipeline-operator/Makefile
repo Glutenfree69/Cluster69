@@ -113,19 +113,23 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 ##@ Build
 
+# Target architecture for the cluster (override with TARGETARCH=arm64 for ARM clusters)
+TARGETARCH ?= amd64
+
 .PHONY: build
-build: manifests generate fmt vet ## Build manager binary.
+build: manifests generate fmt vet ## Build manager binary (native, for local use).
 	go build -o bin/manager cmd/main.go
+
+.PHONY: build-cross
+build-cross: manifests generate fmt vet ## Cross-compile manager binary for the target cluster arch.
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(TARGETARCH) go build -a -o bin/manager cmd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
 
-# If you wish to build the manager image targeting other platforms you can use the --platform flag.
-# (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
-# More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
-docker-build: ## Build docker image with the manager.
+docker-build: build-cross ## Cross-compile and build container image.
 	$(CONTAINER_TOOL) build -t ${IMG} .
 
 .PHONY: docker-push
@@ -164,21 +168,21 @@ endif
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	@out="$$( "$(KUSTOMIZE)" build config/crd 2>/dev/null || true )"; \
-	if [ -n "$$out" ]; then echo "$$out" | "$(KUBECTL)" apply -f -; else echo "No CRDs to install; skipping."; fi
+	if [ -n "$$out" ]; then echo "$$out" | $(KUBECTL) $(KUBECTL_ARGS) apply -f -; else echo "No CRDs to install; skipping."; fi
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	@out="$$( "$(KUSTOMIZE)" build config/crd 2>/dev/null || true )"; \
-	if [ -n "$$out" ]; then echo "$$out" | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -; else echo "No CRDs to delete; skipping."; fi
+	if [ -n "$$out" ]; then echo "$$out" | $(KUBECTL) $(KUBECTL_ARGS) delete --ignore-not-found=$(ignore-not-found) -f -; else echo "No CRDs to delete; skipping."; fi
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
-	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" apply -f -
+	"$(KUSTOMIZE)" build config/default | $(KUBECTL) $(KUBECTL_ARGS) apply -f -
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -
+	"$(KUSTOMIZE)" build config/default | $(KUBECTL) $(KUBECTL_ARGS) delete --ignore-not-found=$(ignore-not-found) -f -
 
 ##@ Dependencies
 
@@ -188,7 +192,8 @@ $(LOCALBIN):
 	mkdir -p "$(LOCALBIN)"
 
 ## Tool Binaries
-KUBECTL ?= kubectl --context $(KUBECTL_CONTEXT)
+KUBECTL ?= kubectl
+KUBECTL_ARGS ?= --context $(KUBECTL_CONTEXT)
 KIND ?= kind
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen

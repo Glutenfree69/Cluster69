@@ -1,8 +1,11 @@
 # agentpipeline-operator
-// TODO(user): Add simple overview of use/purpose
+
+Kubernetes operator that orchestrates AI agent pipelines (kagent) for cluster diagnostics and GitOps automation.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+
+Watches `AgentPipeline` CRDs and executes ordered stages of kagent agents (diagnose → advise → propose-fix)
+via the A2A (Agent-to-Agent) HTTP/SSE protocol.
 
 ## Getting Started
 
@@ -22,47 +25,58 @@ Podman/Buildah does not handle "deny-all + re-include" patterns (e.g. `**` then 
 the same way Docker BuildKit does. The `.dockerignore` in this project uses an explicit
 exclude list instead, which works reliably with both podman and docker.
 
+**Cross-compilation (ARM Mac → amd64 cluster):**
+The Go binary is cross-compiled on the host via `GOOS=linux GOARCH=amd64` before the
+image build. The Dockerfile only copies the pre-built binary into a distroless image —
+no `RUN` instructions, no QEMU emulation, no segfaults on ARM Macs.
+
 ### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
 
-```sh
-# Build and push (uses podman by default)
-make docker-build docker-push IMG=ghcr.io/glutenfree69/agentpipeline-operator:tag
+**1. Login to the container registry:**
 
-# If using docker instead:
-make docker-build docker-push IMG=ghcr.io/glutenfree69/agentpipeline-operator:tag CONTAINER_TOOL=docker
-```
-
-**NOTE:** You must be logged in to the container registry first.
 Requires a [Personal Access Token (classic)](https://github.com/settings/tokens/new) with the `write:packages` scope:
 ```sh
 podman login ghcr.io -u <github-username>
 # Enter your PAT when prompted for password
 ```
 
-**Install the CRDs into the cluster:**
+**2. Build, push, and deploy:**
 
 ```sh
-make install
+# Build (cross-compiles Go binary + builds container image), push, and deploy
+make docker-build IMG=ghcr.io/glutenfree69/agentpipeline-operator:v0.1.0
+make docker-push IMG=ghcr.io/glutenfree69/agentpipeline-operator:v0.1.0
+make deploy IMG=ghcr.io/glutenfree69/agentpipeline-operator:v0.1.0
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+> **IMPORTANT: Bump the image tag** (e.g. `v0.1.0` → `v0.1.1`) every time you rebuild.
+> Kubernetes caches images by tag on each node. If you push a new image with the same tag,
+> the cluster will keep using the old cached version. Bump the tag or you'll go crazy
+> debugging why your changes don't show up.
+
+**3. Apply a sample pipeline:**
 
 ```sh
-make deploy IMG=<some-registry>/agentpipeline-operator:tag
+kubectl apply -f config/samples/aiops_v1alpha1_agentpipeline.yaml
+kubectl -n kagent get agentpipelines
+kubectl -n kagent describe agentpipeline incident-response
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+> privileges or be logged in as admin.
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+### Configuration
 
-```sh
-kubectl apply -k config/samples/
-```
+The Makefile auto-configures kubeconfig and context for cluster69. Override via:
 
->**NOTE**: Ensure that the samples has default values to test it out.
+| Variable | Default | Description |
+|---|---|---|
+| `IMG` | `controller:latest` | Container image URL |
+| `CONTAINER_TOOL` | `podman` | Container runtime (`podman` or `docker`) |
+| `TARGETARCH` | `amd64` | Target architecture for cross-compilation |
+| `KUBECTL_CONTEXT` | `cluster69` | Kubernetes context |
+
+Run `make help` for all available targets.
 
 ### To Uninstall
 **Delete the instances (CRs) from the cluster:**
@@ -83,52 +97,7 @@ make uninstall
 make undeploy
 ```
 
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/agentpipeline-operator:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/agentpipeline-operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-kubebuilder edit --plugins=helm/v2-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
 
 **NOTE:** Run `make help` for more information on all potential `make` targets
 
