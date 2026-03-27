@@ -8,20 +8,37 @@
 
 ### Prerequisites
 - go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+- podman (or docker) — see [Container Runtime](#container-runtime) below
+- kubectl version v1.11.3+
+- Access to a Kubernetes v1.11.3+ cluster
+
+### Container Runtime
+
+This project uses **podman** by default (`CONTAINER_TOOL=podman` in the Makefile).
+You can override it with `make docker-build CONTAINER_TOOL=docker` if you use Docker.
+
+**Podman vs Docker — `.dockerignore` caveat:**
+Podman/Buildah does not handle "deny-all + re-include" patterns (e.g. `**` then `!**/*.go`)
+the same way Docker BuildKit does. The `.dockerignore` in this project uses an explicit
+exclude list instead, which works reliably with both podman and docker.
 
 ### To Deploy on the cluster
 **Build and push your image to the location specified by `IMG`:**
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/agentpipeline-operator:tag
+# Build and push (uses podman by default)
+make docker-build docker-push IMG=ghcr.io/glutenfree69/agentpipeline-operator:tag
+
+# If using docker instead:
+make docker-build docker-push IMG=ghcr.io/glutenfree69/agentpipeline-operator:tag CONTAINER_TOOL=docker
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+**NOTE:** You must be logged in to the container registry first.
+Requires a [Personal Access Token (classic)](https://github.com/settings/tokens/new) with the `write:packages` scope:
+```sh
+podman login ghcr.io -u <github-username>
+# Enter your PAT when prompted for password
+```
 
 **Install the CRDs into the cluster:**
 
