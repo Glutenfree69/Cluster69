@@ -1,0 +1,69 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: node-memory-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: node.rules
+      interval: 30s
+      rules:
+        # Alert when node memory allocation exceeds 85% (warning)
+        - alert: NodeMemoryAllocatableNearFull
+          expr: |
+            (sum(container_memory_working_set_bytes) by (node)) / 
+            machine_memory_bytes > 0.85
+          for: 5m
+          labels:
+            severity: warning
+            component: node
+          annotations:
+            summary: "Node {{ $labels.node }} memory usage > 85%"
+            description: |
+              Node {{ $labels.node }} memory utilization is at {{ $value | humanizePercentage }}.
+              
+              Immediate actions:
+              - Check running pods: kubectl top pods -A
+              - Review recent deployments
+              - Consider pod eviction or node scaling
+              
+              Impact: Risk of OOMKill and pod evictions if not addressed.
+
+        # Alert when node memory allocation exceeds 95% (critical)
+        - alert: NodeMemoryAllocatableFull
+          expr: |
+            (sum(container_memory_working_set_bytes) by (node)) / 
+            machine_memory_bytes > 0.95
+          for: 2m
+          labels:
+            severity: critical
+            component: node
+          annotations:
+            summary: "Node {{ $labels.node }} CRITICAL memory usage > 95%"
+            description: |
+              Node {{ $labels.node }} memory utilization is CRITICAL at {{ $value | humanizePercentage }}.
+              
+              Emergency actions required:
+              - Immediate pod eviction if necessary: kubectl drain {{ $labels.node }} --ignore-daemonsets
+              - Scale cluster or increase node memory
+              - Review resource requests/limits on deployments
+              
+              Impact: OOMKill likely imminent. Pod availability at severe risk.
+
+        # Alert when kubelet is unable to allocate memory for new pods
+        - alert: KubeletNotReady
+          expr: |
+            kubelet_running_pod_count / kubelet_desired_pod_count < 0.95
+          for: 5m
+          labels:
+            severity: warning
+            component: kubelet
+          annotations:
+            summary: "Kubelet unable to allocate pods on {{ $labels.node }}"
+            description: |
+              Kubelet on node {{ $labels.node }} cannot schedule {{ $value | humanizePercentage }} of desired pods.
+              This is typically due to memory or disk pressure.
+              
+              Check kubelet status:
+              - kubectl describe node {{ $labels.node }}
+              - kubectl logs -n kube-system -l component=kubelet --tail=100
