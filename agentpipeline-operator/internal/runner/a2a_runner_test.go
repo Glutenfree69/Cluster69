@@ -26,12 +26,12 @@ import (
 )
 
 func TestA2ARunnerSuccess(t *testing.T) {
-	// Mock SSE server that returns a completed task.
+	// Mock SSE server that returns a completed task via JSON-RPC 2.0.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		if r.URL.Path != "/api/a2a/kagent/diagnostic/task" {
+		if r.URL.Path != "/api/a2a/kagent/diagnostic" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 
@@ -45,12 +45,12 @@ func TestA2ARunnerSuccess(t *testing.T) {
 
 		// Send working status.
 		fmt.Fprint(w, "event: task-status\n")
-		fmt.Fprint(w, `data: {"id":"task-123","status":{"state":"working","message":{"parts":[{"text":"analyzing..."}]}}}`+"\n\n")
+		fmt.Fprint(w, `data: {"jsonrpc":"2.0","id":"req-1","result":{"id":"task-123","status":{"state":"working","message":{"role":"assistant","parts":[{"text":"analyzing..."}]}}}}`+"\n\n")
 		flusher.Flush()
 
 		// Send completed status.
 		fmt.Fprint(w, "event: task-status\n")
-		fmt.Fprint(w, `data: {"id":"task-123","status":{"state":"completed","message":{"parts":[{"text":"OOMKill on pod-xyz"}]}}}`+"\n\n")
+		fmt.Fprint(w, `data: {"jsonrpc":"2.0","id":"req-1","result":{"id":"task-123","status":{"state":"completed","message":{"role":"assistant","parts":[{"text":"OOMKill on pod-xyz"}]}}}}`+"\n\n")
 		flusher.Flush()
 	}))
 	defer server.Close()
@@ -83,7 +83,7 @@ func TestA2ARunnerFailure(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 
 		fmt.Fprint(w, "event: task-status\n")
-		fmt.Fprint(w, `data: {"id":"task-456","status":{"state":"failed","message":{"parts":[{"text":"agent crashed"}]}}}`+"\n\n")
+		fmt.Fprint(w, `data: {"jsonrpc":"2.0","id":"req-1","result":{"id":"task-456","status":{"state":"failed","message":{"role":"assistant","parts":[{"text":"agent crashed"}]}}}}`+"\n\n")
 	}))
 	defer server.Close()
 
@@ -164,7 +164,7 @@ func TestA2ARunnerMultiPartOutput(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 
 		fmt.Fprint(w, "event: task-status\n")
-		fmt.Fprint(w, `data: {"id":"task-789","status":{"state":"completed","message":{"parts":[{"text":"part1"},{"text":"part2"}]}}}`+"\n\n")
+		fmt.Fprint(w, `data: {"jsonrpc":"2.0","id":"req-1","result":{"id":"task-789","status":{"state":"completed","message":{"role":"assistant","parts":[{"text":"part1"},{"text":"part2"}]}}}}`+"\n\n")
 	}))
 	defer server.Close()
 
@@ -181,6 +181,32 @@ func TestA2ARunnerMultiPartOutput(t *testing.T) {
 	}
 	if result.Output != "part1\npart2" {
 		t.Errorf("expected 'part1\\npart2', got %q", result.Output)
+	}
+}
+
+func TestA2ARunnerRPCError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+
+		fmt.Fprint(w, "event: task-status\n")
+		fmt.Fprint(w, `data: {"jsonrpc":"2.0","id":"req-1","error":{"code":-32600,"message":"Invalid Request"}}`+"\n\n")
+	}))
+	defer server.Close()
+
+	runner := NewA2ARunner(server.URL, "test@test.com")
+	result, err := runner.RunAgent(context.Background(), RunRequest{
+		AgentName: "agent",
+		Namespace: "kagent",
+		Prompt:    "test",
+		Timeout:   5 * time.Second,
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != RunStatusFailed {
+		t.Errorf("expected Failed, got %s", result.Status)
 	}
 }
 

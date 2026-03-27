@@ -7,6 +7,24 @@ Kubernetes operator that orchestrates AI agent pipelines (kagent) for cluster di
 Watches `AgentPipeline` CRDs and executes ordered stages of kagent agents (diagnose → advise → propose-fix)
 via the A2A (Agent-to-Agent) HTTP/SSE protocol.
 
+### A2A Protocol Details
+
+The operator communicates with kagent using JSON-RPC 2.0 over the A2A protocol:
+
+- **Method**: `message/stream` (SSE streaming). `message/send` returns plain JSON and is not used.
+- **Part format**: Each message part must include a `"kind"` field (e.g. `"kind": "text"`), as required by `a2a-go` v0.3.x used by kagent.
+- **Output sources**: Agent responses can arrive as:
+  - `task_artifact_update` events (preferred — the agent's final answer)
+  - `status.message` in `task_status_update` events (fallback)
+  - The `completed` status event itself often carries no message — output must be collected from earlier events.
+
+### Idempotency
+
+The controller guards against duplicate agent invocations caused by Kubernetes ResourceVersion conflicts.
+Before starting a stage, it checks if the output ConfigMap already exists. If it does, the agent already
+ran successfully but the status update failed — the controller recovers from the existing output without
+re-invoking the agent.
+
 ## Getting Started
 
 ### Prerequisites
@@ -43,13 +61,14 @@ podman login ghcr.io -u <github-username>
 **2. Build, push, and deploy:**
 
 ```sh
-# Build (cross-compiles Go binary + builds container image), push, and deploy
-make docker-build IMG=ghcr.io/glutenfree69/agentpipeline-operator:v0.1.0
-make docker-push IMG=ghcr.io/glutenfree69/agentpipeline-operator:v0.1.0
-make deploy IMG=ghcr.io/glutenfree69/agentpipeline-operator:v0.1.0
+# Build (cross-compiles Go binary + builds container image), push, and deploy (bump that bitch)
+export IMG=ghcr.io/glutenfree69/agentpipeline-operator:v0.1.0
+make docker-build $IMG
+make docker-push $IMG
+make deploy $IMG
 ```
 
-> **IMPORTANT: Bump the image tag** (e.g. `v0.1.0` → `v0.1.1`) every time you rebuild.
+> **IMPORTANT: Bump that bitch** (e.g. `v0.1.0` → `v0.1.1`) every time you rebuild.
 > Kubernetes caches images by tag on each node. If you push a new image with the same tag,
 > the cluster will keep using the old cached version. Bump the tag or you'll go crazy
 > debugging why your changes don't show up.

@@ -216,6 +216,17 @@ func (r *AgentPipelineReconciler) startStage(
 ) (ctrl.Result, error) {
 	slog.Info("starting stage", "stage", stageSpec.Name, "agent", stageSpec.AgentRef.Name)
 
+	// Guard against duplicate execution: if the output ConfigMap already exists,
+	// the agent already ran but the status update failed (conflict). Re-apply the
+	// status from the existing output instead of re-invoking the agent.
+	existingOutput, err := r.Handler.readConfigMapOutput(ctx, pipeline.Namespace,
+		outputConfigMapName(pipeline.Name, stageSpec.Name))
+	if err == nil {
+		slog.Info("stage output already exists, recovering from previous conflict",
+			"stage", stageSpec.Name)
+		return r.completeStageFromOutput(ctx, pipeline, stageSpec, stageStatus, existingOutput)
+	}
+
 	now := metav1.Now()
 	stageStatus.Phase = aiopsv1alpha1.StageRunning
 	stageStatus.StartedAt = &now
@@ -308,6 +319,31 @@ func (r *AgentPipelineReconciler) completeStage(
 	)
 
 	// Requeue to process the next stage.
+	return ctrl.Result{Requeue: true}, nil
+}
+
+// completeStageFromOutput recovers a stage that already ran (ConfigMap exists)
+// but whose status update failed due to a conflict.
+func (r *AgentPipelineReconciler) completeStageFromOutput(
+	ctx context.Context,
+	pipeline *aiopsv1alpha1.AgentPipeline,
+	stageSpec *aiopsv1alpha1.StageSpec,
+	stageStatus *aiopsv1alpha1.StageStatus,
+	output string,
+) (ctrl.Result, error) {
+	now := metav1.Now()
+	stageStatus.Phase = aiopsv1alpha1.StageCompleted
+	stageStatus.CompletedAt = &now
+	stageStatus.Output = truncateOutput(output)
+	stageStatus.OutputRef = outputConfigMapName(pipeline.Name, stageSpec.Name)
+
+	if err := r.Status().Update(ctx, pipeline); err != nil {
+		return ctrl.Result{}, fmt.Errorf("recovering stage %q to Completed: %w", stageSpec.Name, err)
+	}
+
+	r.Recorder.Event(pipeline, corev1.EventTypeNormal, "StageCompleted",
+		fmt.Sprintf("Stage %q completed (recovered)", stageSpec.Name))
+
 	return ctrl.Result{Requeue: true}, nil
 }
 

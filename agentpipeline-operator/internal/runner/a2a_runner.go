@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -33,11 +34,28 @@ const (
 	defaultUserID  = "admin@kagent.dev"
 )
 
-// a2aTaskRequest is the JSON body sent to the kagent A2A endpoint.
+// a2aTaskRequest is the JSON-RPC 2.0 body sent to the kagent A2A endpoint.
+// Follows the Google A2A spec: https://github.com/google/A2A
 type a2aTaskRequest struct {
-	AppName string `json:"app_name"`
-	UserID  string `json:"user_id"`
-	Message string `json:"message"`
+	JSONRPC string        `json:"jsonrpc"`
+	ID      string        `json:"id"`
+	Method  string        `json:"method"`
+	Params  a2aTaskParams `json:"params"`
+}
+
+type a2aTaskParams struct {
+	ID      string     `json:"id"`
+	Message a2aMessage `json:"message"`
+}
+
+type a2aMessage struct {
+	Role  string        `json:"role"`
+	Parts []a2aTextPart `json:"parts"`
+}
+
+type a2aTextPart struct {
+	Kind string `json:"kind"`
+	Text string `json:"text"`
 }
 
 // a2aSSEEvent represents a parsed Server-Sent Event from the kagent response stream.
@@ -46,17 +64,34 @@ type a2aSSEEvent struct {
 	Data  string
 }
 
-// a2aTaskStatus represents the status field in a kagent SSE task update.
-type a2aTaskStatus struct {
-	TaskID string `json:"id"`
+// a2aSSEResponse represents a JSON-RPC 2.0 SSE response from kagent.
+// The result field contains the A2A task status update.
+type a2aSSEResponse struct {
+	JSONRPC string         `json:"jsonrpc"`
+	ID      string         `json:"id"`
+	Result  *a2aTaskResult `json:"result,omitempty"`
+	Error   *a2aRPCError   `json:"error,omitempty"`
+}
+
+type a2aRPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type a2aTaskResult struct {
+	ID     string `json:"id"`
+	Kind   string `json:"kind"`
+	TaskID string `json:"taskId"`
 	Status struct {
-		State   string `json:"state"`
-		Message struct {
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-		} `json:"message"`
+		State   string      `json:"state"`
+		Message *a2aMessage `json:"message,omitempty"`
 	} `json:"status"`
+	Artifact *a2aArtifact `json:"artifact,omitempty"`
+}
+
+type a2aArtifact struct {
+	ArtifactID string        `json:"artifactId"`
+	Parts      []a2aTextPart `json:"parts"`
 }
 
 // A2ARunner implements AgentRunner using the kagent A2A HTTP/SSE protocol.
@@ -97,12 +132,20 @@ func (r *A2ARunner) RunAgent(ctx context.Context, req RunRequest) (*RunResult, e
 		defer cancel()
 	}
 
-	// Build the A2A request.
-	url := fmt.Sprintf("%s/api/a2a/%s/%s/task", r.baseURL, req.Namespace, req.AgentName)
+	// Build the A2A JSON-RPC 2.0 request.
+	url := fmt.Sprintf("%s/api/a2a/%s/%s", r.baseURL, req.Namespace, req.AgentName)
+	taskID := fmt.Sprintf("%s-%s-%d", req.Namespace, req.AgentName, time.Now().UnixNano())
 	body := a2aTaskRequest{
-		AppName: req.AgentName,
-		UserID:  r.userID,
-		Message: req.Prompt,
+		JSONRPC: "2.0",
+		ID:      taskID,
+		Method:  "message/stream",
+		Params: a2aTaskParams{
+			ID: taskID,
+			Message: a2aMessage{
+				Role:  "user",
+				Parts: []a2aTextPart{{Kind: "text", Text: req.Prompt}},
+			},
+		},
 	}
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
@@ -163,6 +206,7 @@ func (r *A2ARunner) parseSSEStream(ctx context.Context, body io.Reader) (*RunRes
 
 	var currentEvent a2aSSEEvent
 	var result RunResult
+	var artifactTexts []string
 
 	for scanner.Scan() {
 		if ctx.Err() != nil {
@@ -174,11 +218,14 @@ func (r *A2ARunner) parseSSEStream(ctx context.Context, body io.Reader) (*RunRes
 		// Empty line signals end of an event.
 		if line == "" {
 			if currentEvent.Data != "" {
-				if err := r.processEvent(&currentEvent, &result); err != nil {
+				if err := r.processEvent(&currentEvent, &result, &artifactTexts); err != nil {
 					return nil, err
 				}
 				// Return immediately on terminal states.
 				if result.Status == RunStatusCompleted || result.Status == RunStatusFailed {
+					if result.Output == "" && len(artifactTexts) > 0 {
+						result.Output = strings.Join(artifactTexts, "\n")
+					}
 					return &result, nil
 				}
 			}
@@ -207,34 +254,61 @@ func (r *A2ARunner) parseSSEStream(ctx context.Context, body io.Reader) (*RunRes
 }
 
 // processEvent handles a single SSE event and updates the result.
-func (r *A2ARunner) processEvent(event *a2aSSEEvent, result *RunResult) error {
-	var status a2aTaskStatus
-	if err := json.Unmarshal([]byte(event.Data), &status); err != nil {
+func (r *A2ARunner) processEvent(event *a2aSSEEvent, result *RunResult, artifactTexts *[]string) error {
+	log.Printf("[A2A DEBUG] event=%s data=%s", event.Event, event.Data)
+
+	var resp a2aSSEResponse
+	if err := json.Unmarshal([]byte(event.Data), &resp); err != nil {
 		// Non-JSON events (e.g. heartbeats) are ignored.
 		return nil
 	}
 
-	if status.TaskID != "" {
-		result.TaskID = status.TaskID
+	// Handle JSON-RPC errors.
+	if resp.Error != nil {
+		result.Status = RunStatusFailed
+		result.Error = fmt.Sprintf("A2A RPC error %d: %s", resp.Error.Code, resp.Error.Message)
+		return nil
 	}
 
-	switch status.Status.State {
+	if resp.Result == nil {
+		return nil
+	}
+
+	if resp.Result.TaskID != "" {
+		result.TaskID = resp.Result.TaskID
+	} else if resp.Result.ID != "" {
+		result.TaskID = resp.Result.ID
+	}
+
+	// Collect text from artifact events.
+	if resp.Result.Artifact != nil {
+		for _, p := range resp.Result.Artifact.Parts {
+			if p.Text != "" {
+				*artifactTexts = append(*artifactTexts, p.Text)
+			}
+		}
+	}
+
+	// Handle terminal status updates.
+	switch resp.Result.Status.State {
 	case "completed":
 		result.Status = RunStatusCompleted
-		result.Output = extractText(status)
+		result.Output = extractText(resp.Result)
 	case "failed", "canceled":
 		result.Status = RunStatusFailed
-		result.Error = extractText(status)
+		result.Error = extractText(resp.Result)
 	}
-	// "submitted", "working", "input-required" are progress states — ignored.
 
 	return nil
 }
 
-// extractText concatenates all text parts from the task status message.
-func extractText(status a2aTaskStatus) string {
+// extractText concatenates all text parts from the task result message.
+func extractText(task *a2aTaskResult) string {
+	if task.Status.Message == nil {
+		return ""
+	}
 	var parts []string
-	for _, p := range status.Status.Message.Parts {
+	for _, p := range task.Status.Message.Parts {
 		if p.Text != "" {
 			parts = append(parts, p.Text)
 		}
