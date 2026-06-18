@@ -25,6 +25,132 @@ Before starting a stage, it checks if the output ConfigMap already exists. If it
 ran successfully but the status update failed — the controller recovers from the existing output without
 re-invoking the agent.
 
+## Architecture & Flow
+
+### High-level components
+
+```mermaid
+flowchart LR
+    user([User / GitOps]):::ext -->|kubectl apply| cr[("AgentPipeline CR<br/>spec.stages[]")]:::cr
+
+    subgraph operator["agentpipeline-operator (manager pod)"]
+        direction TB
+        rec["AgentPipelineReconciler<br/><i>state machine</i>"]:::core
+        handler["StageHandler<br/><i>prompt templating<br/>+ output storage</i>"]:::core
+        runner["A2ARunner<br/><i>implements AgentRunner</i>"]:::core
+        rec --> handler
+        rec --> runner
+    end
+
+    cr -.->|watch| rec
+    rec -->|update status / events| cr
+    handler <-->|read / write full output| cm[("ConfigMaps<br/>&lt;pipeline&gt;-stage-&lt;name&gt;<br/>(OwnerRef → GC)")]:::cr
+    runner -->|"JSON-RPC 2.0 / SSE<br/>POST /api/a2a/{ns}/{agent}"| kagent["kagent-controller<br/>(:8083)"]:::ext
+    kagent -->|invokes| agents["kagent Agents<br/>(diagnose → advise → fix)"]:::ext
+
+    classDef core fill:#1f6feb,stroke:#0d2b66,color:#fff;
+    classDef cr fill:#2d333b,stroke:#768390,color:#fff;
+    classDef ext fill:#347d39,stroke:#1b4721,color:#fff;
+```
+
+The reconciler is wired in `cmd/main.go` with manual dependency injection: the
+`A2ARunner` and `StageHandler` are constructed and passed into the reconciler,
+which makes the runner mockable for unit tests (`internal/runner/mock_runner.go`).
+
+### Reconcile state machine
+
+The controller is driven entirely by `status.phase`. Each reconcile pass advances
+the pipeline by **at most one stage**, then requeues itself.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: CR created (phase="")
+
+    Pending --> Pending: add finalizer<br/>(requeue)
+    Pending --> Running: init stage statuses<br/>set currentStage = stages[0]
+
+    state Running {
+        direction TB
+        [*] --> FindStage: handleRunning()
+        FindStage --> DepsCheck: next non-completed stage
+        DepsCheck --> FindStage: dependsOn not met<br/>(requeue 10s)
+        DepsCheck --> StartStage: dependencies met
+
+        StartStage --> RunAgent: build context + render prompt
+        RunAgent --> CompleteStage: RunStatus=Completed
+        RunAgent --> FailStage: Failed / TimedOut
+
+        CompleteStage --> FindStage: store output + requeue
+        FailStage --> Retry: retryCount < maxRetries
+        Retry --> FindStage: backoff + requeue
+    }
+
+    Running --> Completed: no stages left
+    FailStage --> Failed: retries exhausted
+    Pending --> Failed: validation error (no stages)
+
+    Completed --> [*]: terminal
+    Failed --> [*]: terminal
+
+    note right of Running
+        Owns(ConfigMap): any change to a child
+        ConfigMap re-triggers a reconcile.
+        On delete: finalizer removed,
+        ConfigMaps GC'd via OwnerReference.
+    end note
+```
+
+### Single stage execution (sequence)
+
+What happens inside `startStage` when a stage runs — including the idempotency
+guard that prevents duplicate agent invocations after a status-write conflict.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as Reconciler
+    participant H as StageHandler
+    participant K as K8s API
+    participant CM as ConfigMaps
+    participant A as A2ARunner
+    participant KA as kagent
+
+    R->>CM: GET output ConfigMap (idempotency guard)
+    alt ConfigMap already exists
+        Note over R,CM: Agent already ran, prior status write conflicted
+        R->>K: status = Completed (recovered from ConfigMap)
+        R-->>R: requeue → next stage
+    else fresh run
+        R->>H: BuildPipelineContext(pipeline, stage)
+        H->>CM: read outputs of completed stages
+        CM-->>H: previous outputs
+        H-->>R: PipelineContext{PreviousOutput, Inputs, StageOutput}
+        R->>H: RenderPrompt(stage, ctx) via Go text/template
+        H-->>R: rendered prompt
+        R->>A: RunAgent(name, ns, prompt, timeout)
+        A->>KA: POST /api/a2a/{ns}/{agent}<br/>JSON-RPC message/stream
+        KA-->>A: SSE stream (artifact + status events)
+        A-->>R: RunResult{Status, Output, TaskID, Duration}
+        alt Completed
+            R->>H: StoreOutput → ConfigMap (full) + truncate (1024 chars)
+            H->>CM: CreateOrUpdate (OwnerRef set)
+            R->>K: status = Completed, outputRef, taskID, event
+        else Failed / TimedOut
+            R->>K: status = Failed + error event
+        end
+        R-->>R: requeue → next stage
+    end
+```
+
+> **Why ConfigMaps for stage output?** A CR's `status` is capped by etcd's per-object
+> size limit and isn't meant for large blobs. The full agent response lives in a
+> ConfigMap (`<pipeline>-stage-<name>`); `status.stages[].output` keeps only the last
+> 1024 characters plus an `outputRef` pointer to the ConfigMap.
+
+> **Note:** Agent invocation is **synchronous** inside the reconcile loop — a stage with
+> a 5-minute timeout occupies a controller worker for that duration. This keeps the design
+> simple at the cost of cross-pipeline parallelism.
+
 ## Getting Started
 
 ### Prerequisites
