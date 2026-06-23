@@ -11,8 +11,31 @@ spec:
     chart: podinfo
     targetRevision: "6.11.1"
     helm:
-      values: |
-        logLevel: debug
+      values: |\
+        logLevel: info
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /status/live
+            port: 9898
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /status/ready
+            port: 9898
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
         ingress:
           enabled: true
           className: ""
