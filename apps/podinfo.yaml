@@ -26,9 +26,11 @@ spec:
             memory: 128Mi
         # Autoscaling horizontal des PODS (pas des nodes : le cluster est statique).
         # Scale quand la conso CPU moyenne dépasse 75% de la request (~19m/pod).
+        # maxReplicas 20 : pas de coût (aucun node en plus), et au pire les pods
+        # excédentaires passent en Pending si le node est plein.
         hpa:
           enabled: true
-          maxReplicas: 6
+          maxReplicas: 20
           cpu: 75
         ingress:
           enabled: true
