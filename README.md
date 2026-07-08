@@ -136,14 +136,14 @@ Cela concerne les outils : `query_prometheus`, `list_prometheus_metric_names`, `
 ```yaml
 grafana-mcp:
   grafana:
-    url: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local:80/grafana/api"
+    url: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local:80/grafana"
     secretRef: "grafana-mcp-token"
   args:
     - --allowed-hosts
     - "kagent-grafana-mcp.kagent:8000"
 ```
 
-> L'URL par defaut du chart kagent (`grafana.kagent:3000/api`) est incorrecte — Grafana est dans le namespace `monitoring`, pas `kagent`. On ajoute `/grafana/api` car Grafana est servi en sous-chemin (`serve_from_sub_path: true`, root_url `/grafana/`).
+> L'URL par defaut du chart kagent (`grafana.kagent:3000/api`) est incorrecte — Grafana est dans le namespace `monitoring`, pas `kagent`. On met le sous-chemin `/grafana` (Grafana est en `serve_from_sub_path: true`, root_url `/grafana/`) **sans** `/api` : mcp-grafana ajoute `/api` lui-meme (`makeBasePath`), donc mettre `/grafana/api` donnerait `/grafana/api/api/...` → `404`.
 
 **Deux pieges a regler pour eviter le `403 Forbidden` au reconcile (`kagent-grafana-mcp`) :**
 
