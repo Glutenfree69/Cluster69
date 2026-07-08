@@ -13,6 +13,23 @@ spec:
     helm:
       values: |
         logLevel: debug
+        # Minimum 2 replicas => le HPA ne descend jamais en dessous (minReplicas = replicaCount)
+        replicaCount: 2
+        # Requests basses + limits raisonnables : le HPA se déclenche vite sous charge
+        # mais reste borné. 6 pods * 25m = 150m demandés au total => rien pour ta CB.
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 500m
+            memory: 128Mi
+        # Autoscaling horizontal des PODS (pas des nodes : le cluster est statique).
+        # Scale quand la conso CPU moyenne dépasse 75% de la request (~19m/pod).
+        hpa:
+          enabled: true
+          maxReplicas: 6
+          cpu: 75
         ingress:
           enabled: true
           className: ""
