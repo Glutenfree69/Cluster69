@@ -138,11 +138,18 @@ grafana-mcp:
   grafana:
     url: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local:80/grafana/api"
     secretRef: "grafana-mcp-token"
+  args:
+    - --allowed-hosts
+    - "kagent-grafana-mcp.kagent:8000"
 ```
 
 > L'URL par defaut du chart kagent (`grafana.kagent:3000/api`) est incorrecte — Grafana est dans le namespace `monitoring`, pas `kagent`. On ajoute `/grafana/api` car Grafana est servi en sous-chemin (`serve_from_sub_path: true`, root_url `/grafana/`).
 
-**Auth** : l'acces anonyme ne suffit pas — le MCP server envoie un header `Authorization: Bearer <token>`, et un token vide fait repondre Grafana en **403 Forbidden**. Il faut un **service account token** Grafana, stocke dans le Secret `grafana-mcp-token` (clé `GRAFANA_SERVICE_ACCOUNT_TOKEN`) et reference via `secretRef` (voir *Setup post-deploy*).
+**Deux pieges a regler pour eviter le `403 Forbidden` au reconcile (`kagent-grafana-mcp`) :**
+
+1. **`--allowed-hosts`** (la vraie cause du 403) : mcp-grafana valide le header `Host` de chaque requete (protection anti-DNS-rebinding). Par defaut il n'autorise que le loopback ; le controller l'appelle via `kagent-grafana-mcp.kagent:8000` et se fait rejeter **avant tout log**. On ajoute ce Host dans `grafana-mcp.args`. (Alternative permissive, service ClusterIP interne seulement : `--allowed-hosts` `*`.)
+
+2. **`serviceAccountToken`** (auth vers Grafana) : mcp-grafana s'authentifie a Grafana avec un **service account token** lu depuis le Secret `grafana-mcp-token` (clé `GRAFANA_SERVICE_ACCOUNT_TOKEN`), reference via `secretRef`. L'acces anonyme ne suffit pas. Voir *Setup post-deploy* pour creer le token + le Secret.
 
 Les outils `k8s_*` et `prometheus_*` de `kagent-tool-server` sont independants et ne passent pas par Grafana.
 

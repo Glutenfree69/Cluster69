@@ -103,6 +103,12 @@ spec:
           grafana:
             url: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local:80/grafana/api"
             secretRef: "grafana-mcp-token"
+          ## mcp-grafana valide le header Host (protection anti-DNS-rebinding).
+          ## Défaut = loopback uniquement → le controller (Host kagent-grafana-mcp.kagent:8000)
+          ## reçoit un 403 Forbidden silencieux. On autorise le Host du Service (ClusterIP interne).
+          args:
+            - --allowed-hosts
+            - "kagent-grafana-mcp.kagent:8000"
 
         tools:
           grafana-mcp:
