@@ -1,0 +1,27 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    policies.kyverno.io/title: Restrict Image Registries
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Les images ne doivent provenir que de registres approuvés, pour limiter la
+      surface d'attaque supply-chain.
+spec:
+  background: true
+  rules:
+    - name: validate-registries
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        failureAction: Audit
+        message: "Registres autorisés : ghcr.io, quay.io, registry.k8s.io, docker.io, ECR."
+        pattern:
+          spec:
+            containers:
+              - image: "ghcr.io/* | quay.io/* | registry.k8s.io/* | docker.io/* | *.dkr.ecr.*.amazonaws.com/*"

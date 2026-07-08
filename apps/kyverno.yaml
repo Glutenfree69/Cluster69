@@ -1,0 +1,78 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+  annotations:
+    # Kyverno (CRDs + contrôleurs) doit être prêt AVANT les policies -> wave 0
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://kyverno.github.io/kyverno
+    chart: kyverno
+    targetRevision: "3.8.1"
+    helm:
+      values: |
+        # Cluster de test : 1 replica par contrôleur (pas de HA).
+        # Les webhooks restent en failurePolicy: Ignore (défaut) -> si Kyverno
+        # tombe, l'admission n'est PAS bloquée. Rien ne casse le cluster.
+
+        # Admission controller = webhook dans le chemin critique de l'API server
+        admissionController:
+          replicas: 1
+          serviceMonitor:
+            enabled: true
+          container:
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                memory: 384Mi
+
+        # Background controller = applique les policies sur l'existant + génération
+        backgroundController:
+          replicas: 1
+          serviceMonitor:
+            enabled: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+
+        # Reports controller = construit les PolicyReports (les violations)
+        reportsController:
+          replicas: 1
+          serviceMonitor:
+            enabled: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+
+        # Cleanup controller = suppression de ressources par TTL (feature cleanup)
+        cleanupController:
+          replicas: 1
+          serviceMonitor:
+            enabled: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -1,0 +1,31 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+  annotations:
+    policies.kyverno.io/title: Require Labels
+    policies.kyverno.io/category: Governance
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/description: >-
+      Impose un label `team` sur les workloads et services pour la traçabilité
+      (ownership, coûts, tri des alertes).
+spec:
+  background: true
+  rules:
+    - name: require-team-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+                - Service
+      validate:
+        failureAction: Audit
+        message: "Le label `team` est obligatoire."
+        pattern:
+          metadata:
+            labels:
+              team: "?*"

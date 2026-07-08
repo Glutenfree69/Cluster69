@@ -1,0 +1,26 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-default-namespace
+  annotations:
+    policies.kyverno.io/title: Disallow Default Namespace
+    policies.kyverno.io/category: Multi-Tenancy
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/description: >-
+      Interdit de déployer des Pods dans le namespace `default` : les workloads
+      doivent vivre dans un namespace dédié (isolation, quotas, RBAC).
+spec:
+  background: true
+  rules:
+    - name: validate-namespace
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        failureAction: Audit
+        message: "Déployer dans le namespace `default` est interdit."
+        pattern:
+          metadata:
+            namespace: "!default"

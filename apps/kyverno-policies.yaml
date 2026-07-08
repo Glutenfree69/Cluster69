@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-policies
+  namespace: argocd
+  annotations:
+    # Après Kyverno (CRDs + contrôleurs) -> wave 1
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://kyverno.github.io/kyverno
+    chart: kyverno-policies
+    targetRevision: "3.8.1"
+    helm:
+      values: |
+        # Pod Security Standards niveau le PLUS strict -> un maximum de violations
+        # remontées (runAsNonRoot, seccomp, capabilities, pas de privileged,
+        # pas de hostPath/hostNetwork/hostPID, etc.).
+        podSecurityStandard: restricted
+        podSecuritySeverity: high
+
+        # AUDIT : les violations sont enregistrées (PolicyReports) SANS jamais
+        # bloquer l'admission. C'est tout l'intérêt ici.
+        validationFailureAction: Audit
+
+        # Génère aussi les rapports sur les ressources DÉJÀ présentes dans le cluster
+        background: true
+
+        # Ne bloque pas les ressources existantes déjà en violation (ceinture+bretelles)
+        validationAllowExistingViolations: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
