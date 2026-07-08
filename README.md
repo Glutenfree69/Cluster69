@@ -136,12 +136,13 @@ Cela concerne les outils : `query_prometheus`, `list_prometheus_metric_names`, `
 ```yaml
 grafana-mcp:
   grafana:
-    url: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local:80"
+    url: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local:80/grafana/api"
+    secretRef: "grafana-mcp-token"
 ```
 
-> L'URL par defaut du chart kagent (`grafana.kagent:3000/api`) est incorrecte — Grafana est dans le namespace `monitoring`, pas `kagent`, et le MCP server ajoute `/api` lui-meme.
+> L'URL par defaut du chart kagent (`grafana.kagent:3000/api`) est incorrecte — Grafana est dans le namespace `monitoring`, pas `kagent`. On ajoute `/grafana/api` car Grafana est servi en sous-chemin (`serve_from_sub_path: true`, root_url `/grafana/`).
 
-**Auth** : Grafana est configure en acces anonyme (Viewer) pour eviter de gerer des tokens. Configurable dans `apps/kube-prometheus-stack.yaml` sous `grafana.ini.auth.anonymous`.
+**Auth** : l'acces anonyme ne suffit pas — le MCP server envoie un header `Authorization: Bearer <token>`, et un token vide fait repondre Grafana en **403 Forbidden**. Il faut un **service account token** Grafana, stocke dans le Secret `grafana-mcp-token` (clé `GRAFANA_SERVICE_ACCOUNT_TOKEN`) et reference via `secretRef` (voir *Setup post-deploy*).
 
 Les outils `k8s_*` et `prometheus_*` de `kagent-tool-server` sont independants et ne passent pas par Grafana.
 
@@ -163,12 +164,21 @@ kubectl create secret generic github-token -n kagent \
   --from-literal=GITHUB_TOKEN="Bearer <GITHUB_PAT>" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# Secret Grafana MCP : service account token pour l'auth du grafana-mcp server
+# → creer d'abord le token dans Grafana :
+#   Administration → Users and access → Service accounts → New (role Admin) → Add token
+kubectl create secret generic grafana-mcp-token -n kagent \
+  --from-literal=GRAFANA_SERVICE_ACCOUNT_TOKEN="glsa_xxxxxxxxxxxxxxxx" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 # 3. Verifier le deploiement
 kubectl get pods -n kagent
 kubectl get agents -n kagent
 ```
 
 **GitHub PAT** : Token classique avec permissions `repo` + `copilot`. Le prefixe `Bearer ` dans le secret est requis par le MCP server GitHub Copilot (`api.githubcopilot.com/mcp/`).
+
+**Grafana service account token** : cree dans Grafana (*Administration → Users and access → Service accounts*, role **Admin**). Ne pas mettre de prefixe `Bearer ` ici — le MCP server l'ajoute lui-meme. Sans ce token, le controller kagent echoue au reconcile avec `initialize: Forbidden` sur `kagent-grafana-mcp`.
 
 ## Quick Start
 

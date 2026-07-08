@@ -96,10 +96,13 @@ spec:
               region: eu-west-3
 
         ## Grafana MCP server — override default URL (grafana.kagent:3000)
+        ## /grafana/api car Grafana est servi en sous-chemin (serve_from_sub_path)
+        ## Token lu depuis le Secret grafana-mcp-token (clé GRAFANA_SERVICE_ACCOUNT_TOKEN)
+        ## → voir README "Secret Grafana MCP" pour le créer
         grafana-mcp:
           grafana:
-            url: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local:80"
-            serviceAccountToken: ""
+            url: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local:80/grafana/api"
+            secretRef: "grafana-mcp-token"
 
         tools:
           grafana-mcp:
