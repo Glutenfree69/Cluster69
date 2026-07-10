@@ -1,56 +1,56 @@
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: policy-reporter
-  namespace: argocd
-  annotations:
-    # Après Kyverno + les policies -> wave 2 (il agrège les PolicyReports)
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  project: default
-  source:
-    repoURL: https://kyverno.github.io/policy-reporter
-    chart: policy-reporter
-    targetRevision: "3.8.1"
-    helm:
-      values: |
-        # Core : agrège les PolicyReports / ClusterPolicyReports du cluster
-        resources:
-          requests:
-            cpu: 10m
-            memory: 64Mi
-          limits:
-            memory: 128Mi
+# apiVersion: argoproj.io/v1alpha1
+# kind: Application
+# metadata:
+#   name: policy-reporter
+#   namespace: argocd
+#   annotations:
+#     # Après Kyverno + les policies -> wave 2 (il agrège les PolicyReports)
+#     argocd.argoproj.io/sync-wave: "2"
+# spec:
+#   project: default
+#   source:
+#     repoURL: https://kyverno.github.io/policy-reporter
+#     chart: policy-reporter
+#     targetRevision: "3.8.1"
+#     helm:
+#       values: |
+#         # Core : agrège les PolicyReports / ClusterPolicyReports du cluster
+#         resources:
+#           requests:
+#             cpu: 10m
+#             memory: 64Mi
+#           limits:
+#             memory: 128Mi
 
-        # UI web des violations. Pas d'Ingress : le repo est public et l'UI (SPA)
-        # gère mal un sous-chemin nginx. Accès via port-forward k9s sur le service
-        # `policy-reporter-ui:8080` (shift-f dans k9s).
-        ui:
-          enabled: true
-          resources:
-            requests:
-              cpu: 10m
-              memory: 64Mi
-            limits:
-              memory: 128Mi
+#         # UI web des violations. Pas d'Ingress : le repo est public et l'UI (SPA)
+#         # gère mal un sous-chemin nginx. Accès via port-forward k9s sur le service
+#         # `policy-reporter-ui:8080` (shift-f dans k9s).
+#         ui:
+#           enabled: true
+#           resources:
+#             requests:
+#               cpu: 10m
+#               memory: 64Mi
+#             limits:
+#               memory: 128Mi
 
-        # Plugin Kyverno : enrichit l'UI avec le détail des policies (source, sévérité,
-        # message) et le live-view des ClusterPolicy.
-        plugin:
-          kyverno:
-            enabled: true
-            resources:
-              requests:
-                cpu: 10m
-                memory: 64Mi
-              limits:
-                memory: 128Mi
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: policy-reporter
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+#         # Plugin Kyverno : enrichit l'UI avec le détail des policies (source, sévérité,
+#         # message) et le live-view des ClusterPolicy.
+#         plugin:
+#           kyverno:
+#             enabled: true
+#             resources:
+#               requests:
+#                 cpu: 10m
+#                 memory: 64Mi
+#               limits:
+#                 memory: 128Mi
+#   destination:
+#     server: https://kubernetes.default.svc
+#     namespace: policy-reporter
+#   syncPolicy:
+#     automated:
+#       prune: true
+#       selfHeal: true
+#     syncOptions:
+#       - CreateNamespace=true
