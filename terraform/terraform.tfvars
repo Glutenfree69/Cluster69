@@ -18,11 +18,11 @@
 # vpc_cidr           = "10.10.0.0/16"
 # public_subnet_cidr = "10.10.1.0/24"
 
-# --- Optional: Instance Types ---
-# control_plane_instance_type = "t3.medium"
-# worker_instance_type        = "t3.small"
-# ingress_instance_type       = "t3.small"
-# monitoring_instance_type    = "t3.medium"
+# --- Instance Types (bumped for presentation, revert after) ---
+control_plane_instance_type = "t3.xlarge" # was t3.medium
+worker_instance_type        = "t3.large"  # was t3.small
+ingress_instance_type       = "t3.medium" # was t3.small
+monitoring_instance_type    = "t3.large"  # was t3.medium
 
 # --- Optional: Storage ---
 # root_volume_size_gb = 20
