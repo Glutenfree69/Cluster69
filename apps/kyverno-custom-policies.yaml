@@ -1,28 +1,28 @@
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: kyverno-custom-policies
-  namespace: argocd
-  annotations:
-    # Après Kyverno (CRDs) -> wave 1, comme kyverno-policies
-    argocd.argoproj.io/sync-wave: "1"
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/Glutenfree69/Cluster69
-    targetRevision: main
-    # Manifests bruts (ClusterPolicy) : source de type "directory", pas Helm.
-    # Le dossier n'est PAS dans apps/ pour que l'app "root" ne les lise pas
-    # comme des Application (root a recurse: false sur apps/).
-    path: kyverno/custom-policies
-    directory:
-      recurse: false
-  destination:
-    server: https://kubernetes.default.svc
-    # Les ClusterPolicy sont cluster-scoped ; le namespace ci-dessous n'a pas
-    # d'effet sur elles mais reste requis par le schéma Application.
-    namespace: kyverno
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
+# apiVersion: argoproj.io/v1alpha1
+# kind: Application
+# metadata:
+#   name: kyverno-custom-policies
+#   namespace: argocd
+#   annotations:
+#     # Après Kyverno (CRDs) -> wave 1, comme kyverno-policies
+#     argocd.argoproj.io/sync-wave: "1"
+# spec:
+#   project: default
+#   source:
+#     repoURL: https://github.com/Glutenfree69/Cluster69
+#     targetRevision: main
+#     # Manifests bruts (ClusterPolicy) : source de type "directory", pas Helm.
+#     # Le dossier n'est PAS dans apps/ pour que l'app "root" ne les lise pas
+#     # comme des Application (root a recurse: false sur apps/).
+#     path: kyverno/custom-policies
+#     directory:
+#       recurse: false
+#   destination:
+#     server: https://kubernetes.default.svc
+#     # Les ClusterPolicy sont cluster-scoped ; le namespace ci-dessous n'a pas
+#     # d'effet sur elles mais reste requis par le schéma Application.
+#     namespace: kyverno
+#   syncPolicy:
+#     automated:
+#       prune: true
+#       selfHeal: true
