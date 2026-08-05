@@ -49,7 +49,7 @@ variable "worker_instance_type" {
 variable "ingress_instance_type" {
   description = "Instance type for the ingress node"
   type        = string
-  default     = "t3.small"
+  default     = "t3.medium"
 }
 
 variable "monitoring_instance_type" {
