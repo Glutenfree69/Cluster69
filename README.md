@@ -6,42 +6,42 @@ Cluster Kubernetes self-managed (kubeadm) sur AWS, provisionné from scratch ave
 
 ```mermaid
 flowchart TB
-    subgraph DEV["Poste local"]
-        TF["Terraform"]
-        AN["Ansible"]
-        KC["kubectl / k9s"]
+    subgraph DEV[\"Poste local\"]
+        TF[\"Terraform\"]
+        AN[\"Ansible\"]
+        KC[\"kubectl / k9s\"]
     end
 
-    subgraph AWS["AWS eu-west-3"]
-        subgraph VPC["VPC 10.10.0.0/16"]
-            subgraph SUBNET["Subnet public 10.10.1.0/24 — eu-west-3a"]
-                K1["kube-1\nt3.medium · 4 GB\nControl Plane + Worker"]
-                K2["kube-2\nt3.small · 2 GB\nWorker"]
-                IG["ingress\nt3.small · 2 GB\nIngress Controller"]
-                MO["monitoring\nt3.medium · 4 GB\nPrometheus · Grafana · Loki · kagent"]
+    subgraph AWS[\"AWS eu-west-3\"]
+        subgraph VPC[\"VPC 10.10.0.0/16\"]
+            subgraph SUBNET[\"Subnet public 10.10.1.0/24 — eu-west-3a\"]
+                K1[\"kube-1\\nt3.medium · 4 GB\\nControl Plane + Worker\"]
+                K2[\"kube-2\\nt3.small · 2 GB\\nWorker\"]
+                IG[\"ingress\\nt3.small · 2 GB\\nIngress Controller\"]
+                MO[\"monitoring\\nt3.medium · 4 GB\\nPrometheus · Grafana · Loki · kagent\"]
             end
-            IGW["Internet Gateway"]
+            IGW[\"Internet Gateway\"]
         end
-        SSM["SSM Parameter Store\n/cluster69/kubeconfig"]
-        S3["S3 — Terraform state"]
-        BED["Amazon Bedrock\nClaude Haiku 4.5"]
+        SSM[\"SSM Parameter Store\\n/cluster69/kubeconfig\"]
+        S3[\"S3 — Terraform state\"]
+        BED[\"Amazon Bedrock\\nClaude Haiku 4.5\"]
     end
 
-    TF -- "terraform apply" --> VPC
-    TF -- "tfstate" --> S3
-    TF -- "inventory" --> AN
-    AN -- "SSH" --> K1
-    AN -- "SSH" --> K2
-    AN -- "SSH" --> IG
-    AN -- "SSH" --> MO
-    AN -- "kubeconfig" --> SSM
-    KC -- "kubectl (6443)" --> K1
+    TF -- \"terraform apply\" --> VPC
+    TF -- \"tfstate\" --> S3
+    TF -- \"inventory\" --> AN
+    AN -- \"SSH\" --> K1
+    AN -- \"SSH\" --> K2
+    AN -- \"SSH\" --> IG
+    AN -- \"SSH\" --> MO
+    AN -- \"kubeconfig\" --> SSM
+    KC -- \"kubectl (6443)\" --> K1
 
-    K1 -- "kubeadm join" --> K2
-    K1 -- "kubeadm join" --> IG
-    K1 -- "kubeadm join" --> MO
+    K1 -- \"kubeadm join\" --> K2
+    K1 -- \"kubeadm join\" --> IG
+    K1 -- \"kubeadm join\" --> MO
 
-    MO -. "InvokeModel" .-> BED
+    MO -. \"InvokeModel\" .-> BED
 
     IGW --- SUBNET
 
@@ -257,4 +257,4 @@ Cluster69/
 - Cle SSH `~/.ssh/id_ed25519`
 - Bucket S3 `logs69` existant
 
-🚀
+🚀 ✨
