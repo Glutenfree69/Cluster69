@@ -1,0 +1,44 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: node-memory-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: node.rules
+      interval: 30s
+      rules:
+        - alert: NodeMemoryAllocatableNearFull
+          expr: |
+            (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.85
+          for: 5m
+          labels:
+            severity: warning
+            component: node
+          annotations:
+            summary: "Node {{ $labels.node }} memory utilization > 85%"
+            description: "Node {{ $labels/kubernetes.io/hostname }} has {{ $value | humanizePercentage }} memory allocated. This may trigger pod evictions soon."
+            runbook_url: "https://wiki.example.com/alerts/node-memory-near-full"
+
+        - alert: NodeMemoryAllocatableFull
+          expr: |
+            (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.95
+          for: 2m
+          labels:
+            severity: critical
+            component: node
+          annotations:
+            summary: "Node {{ $labels.node }} memory CRITICAL > 95%"
+            description: "Node {{ $labels/kubernetes.io/hostname }} has {{ $value | humanizePercentage }} memory allocated. OOMKill events likely imminent. Take immediate action."
+            runbook_url: "https://wiki.example.com/alerts/node-memory-critical"
+
+        - alert: NodeMemorySpikeDetected
+          expr: |
+            rate((node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)[5m:1m]) > 0.1 * node_memory_MemTotal_bytes
+          for: 2m
+          labels:
+            severity: warning
+            component: node
+          annotations:
+            summary: "Node {{ $labels.node }} memory spike detected"
+            description: "Node {{ $labels/kubernetes.io/hostname }} memory consumption increased by {{ $value | humanize }}B/min over the last 5 minutes."
